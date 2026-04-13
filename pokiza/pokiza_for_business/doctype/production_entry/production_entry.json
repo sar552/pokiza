@@ -117,6 +117,7 @@
    "reqd": 1
   },
   {
+   "default": "Производство склад - P",
    "fieldname": "target_warehouse",
    "fieldtype": "Link",
    "label": "Target Warehouse",

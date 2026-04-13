@@ -1,8 +1,15 @@
 // Copyright (c) 2025, Sardorbek and contributors
 // For license information, please see license.txt
 
+const DEFAULT_PRODUCTION_WAREHOUSE = "Производство склад - P";
+
 frappe.ui.form.on('Production Entry', {
     setup: function(frm) {
+        // Set default target warehouse for new documents
+        if (frm.is_new() && !frm.doc.target_warehouse) {
+            frm.set_value("target_warehouse", DEFAULT_PRODUCTION_WAREHOUSE);
+        }
+
         // Set default company for new documents
         if (frm.is_new() && !frm.doc.company) {
             frappe.call({
@@ -99,6 +106,15 @@ frappe.ui.form.on('Production Entry', {
             });
             frm.refresh_field("items");
             update_all_available_qty(frm);
+        }
+    },
+
+    items_add: function(frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+        let warehouse = frm.doc.target_warehouse || DEFAULT_PRODUCTION_WAREHOUSE;
+
+        if (row && warehouse && !row.source_warehouse) {
+            frappe.model.set_value(cdt, cdn, "source_warehouse", warehouse);
         }
     }
 });

@@ -273,13 +273,15 @@ frappe.ui.form.on("Kassa", {
             frm.trigger("update_sub_account_options");
         } else {
             frm.set_value("expense_account_name", "");
-            frm.set_df_property("custom_sub_account_name", "options", [""]);
-            frm.set_value("custom_sub_account_name", "");
+            if (has_field(frm, "custom_sub_account_name")) {
+                frm.set_df_property("custom_sub_account_name", "options", [""]);
+                frm.set_value("custom_sub_account_name", "");
+            }
         }
     },
 
     update_sub_account_options: function(frm) {
-        if (frm.doc.expense_account) {
+        if (frm.doc.expense_account && has_field(frm, "custom_sub_account_name")) {
             frappe.call({
                 method: "frappe.client.get_value",
                 args: {
@@ -324,6 +326,10 @@ frappe.ui.form.on("Kassa", {
         }
     }
 });
+
+function has_field(frm, fieldname) {
+    return Boolean(frm && frm.fields_dict && frm.fields_dict[fieldname]);
+}
 
 function get_party_name_field(party_type) {
     const name_fields = {
