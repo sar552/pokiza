@@ -1,7 +1,7 @@
 // Copyright (c) 2025, Sardorbek and contributors
 // For license information, please see license.txt
 
-const DEFAULT_PRODUCTION_WAREHOUSE = "Производство склад - P";
+const DEFAULT_PRODUCTION_WAREHOUSE = "Склад сырьё - P";
 
 frappe.ui.form.on('Production Entry', {
     setup: function(frm) {
