@@ -24,7 +24,6 @@ frappe.ui.form.on('Production Entry', {
 
         frm.set_df_property("items", "cannot_add_rows", true);
         frm.set_df_property("items", "cannot_delete_rows", true);
-        lock_bom_items_grid(frm);
 
         // Set default target warehouse for new documents
         if (frm.is_new() && !frm.doc.target_warehouse) {
@@ -46,8 +45,6 @@ frappe.ui.form.on('Production Entry', {
     },
 
     refresh: function(frm) {
-        lock_bom_items_grid(frm);
-
         // Set query for BOM - only show BOMs for selected item
         frm.set_query("bom_no", function() {
             return {
@@ -75,10 +72,6 @@ frappe.ui.form.on('Production Entry', {
                 update_all_available_qty(frm);
             });
         }
-    },
-
-    items_on_form_rendered: function(frm, grid_row) {
-        lock_bom_item_row_form(grid_row);
     },
 
     item_to_manufacture: function(frm) {
@@ -147,10 +140,6 @@ frappe.ui.form.on('Production Entry', {
 });
 
 frappe.ui.form.on('Production Entry Item', {
-    form_render: function(frm, cdt, cdn) {
-        lock_bom_item_form(frm, cdn);
-    },
-
     item_code: function(frm, cdt, cdn) {
         let row = locals[cdt][cdn];
         if (row.item_code && row.source_warehouse) {
@@ -165,48 +154,6 @@ frappe.ui.form.on('Production Entry Item', {
         }
     }
 });
-
-function lock_bom_items_grid(frm) {
-    let items_grid = frm.get_field("items").grid;
-    items_grid.cannot_add_rows = true;
-    items_grid.df.cannot_add_rows = true;
-    items_grid.df.cannot_delete_rows = true;
-    items_grid.only_sortable();
-    BOM_ITEM_READ_ONLY_FIELDS.forEach(function(fieldname) {
-        items_grid.update_docfield_property(fieldname, "read_only", 1);
-    });
-    frm.refresh_field("items");
-    hide_bom_grid_checkboxes(frm);
-}
-
-function lock_bom_item_form(frm, cdn) {
-    let grid_row = frm.get_field("items").grid.grid_rows_by_docname?.[cdn];
-    lock_bom_item_row_form(grid_row);
-}
-
-function lock_bom_item_row_form(grid_row) {
-    if (!grid_row || !grid_row.grid_form) {
-        return;
-    }
-
-    BOM_ITEM_READ_ONLY_FIELDS.forEach(function(fieldname) {
-        let field = grid_row.grid_form.fields_dict[fieldname];
-        if (!field) {
-            return;
-        }
-
-        field.df.read_only = 1;
-        field.refresh();
-    });
-}
-
-function hide_bom_grid_checkboxes(frm) {
-    let items_grid = frm.get_field("items").grid;
-
-    setTimeout(function() {
-        items_grid.wrapper.find(".row-check").css("display", "none");
-    }, 0);
-}
 
 function fetch_bom_items(frm) {
     frappe.call({
