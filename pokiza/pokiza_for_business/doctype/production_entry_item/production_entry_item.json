@@ -21,6 +21,7 @@
    "in_list_view": 1,
    "label": "Item Code",
    "options": "Item",
+   "read_only": 1,
    "reqd": 1
   },
   {
@@ -41,6 +42,7 @@
    "in_list_view": 1,
    "label": "Source Warehouse",
    "options": "Warehouse",
+   "read_only": 1,
    "reqd": 1
   },
   {
@@ -52,6 +54,7 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Required Qty",
+   "read_only": 1,
    "reqd": 1
   },
   {

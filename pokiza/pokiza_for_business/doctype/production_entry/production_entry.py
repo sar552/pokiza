@@ -6,12 +6,16 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
 
+FINISHED_GOODS_ITEM_GROUP = "Готовый продукт"
+
 
 class ProductionEntry(Document):
     def validate(self):
         self.set_status()
-        self.validate_qty()
+        self.validate_item_to_manufacture()
         self.validate_bom()
+        self.set_items_from_bom()
+        self.validate_qty()
         self.update_available_qty()
 
     def on_submit(self):
@@ -47,6 +51,33 @@ class ProductionEntry(Document):
             bom = frappe.get_doc("BOM", self.bom_no)
             if bom.item != self.item_to_manufacture:
                 frappe.throw(_("BOM {0} is not for Item {1}").format(self.bom_no, self.item_to_manufacture))
+
+    def validate_item_to_manufacture(self):
+        if not self.item_to_manufacture:
+            return
+
+        item_group = frappe.get_cached_value("Item", self.item_to_manufacture, "item_group")
+        if item_group != FINISHED_GOODS_ITEM_GROUP:
+            frappe.throw(
+                _("Item To Manufacture must belong to Item Group {0}").format(FINISHED_GOODS_ITEM_GROUP)
+            )
+
+    def set_items_from_bom(self):
+        if not self.bom_no or not flt(self.qty_to_manufacture):
+            self.set("items", [])
+            return
+
+        bom_items = get_bom_items(
+            self.bom_no,
+            self.qty_to_manufacture,
+            self.posting_date,
+            self.posting_time,
+            self.target_warehouse,
+        )
+
+        self.set("items", [])
+        for item in bom_items:
+            self.append("items", item)
 
     def update_available_qty(self):
         """Update available qty for all items based on posting date/time"""

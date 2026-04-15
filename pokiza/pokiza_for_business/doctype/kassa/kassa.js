@@ -1,8 +1,23 @@
 // Copyright (c) 2025, abdulloh and contributors
 // For license information, please see license.txt
 
+const MODE_OF_PAYMENT_CASH_UZS_NAMES = ["Наличый UZS", "Наличный UZS"];
+const MODE_OF_PAYMENT_CASH_USD_NAMES = ["Наличый USD", "Наличный USD"];
+const MODE_OF_PAYMENT_BANK = "Р/С";
+const DIVIDEND_PARTY_TYPES = ["Дивиденд", "Дивиденд 1", "Дивиденд 2", "Дивиденд 3"];
+
+function isCashUzsModeOfPayment(modeOfPayment) {
+    return MODE_OF_PAYMENT_CASH_UZS_NAMES.includes(modeOfPayment);
+}
+
+function isCashUsdModeOfPayment(modeOfPayment) {
+    return MODE_OF_PAYMENT_CASH_USD_NAMES.includes(modeOfPayment);
+}
+
 frappe.ui.form.on("Kassa", {
     refresh: function(frm) {
+        frm._cash_account_to_currency = frm._cash_account_to_currency || "";
+
         // Set expense account query
         frm.set_query("expense_account", function() {
             return {
@@ -22,7 +37,7 @@ frappe.ui.form.on("Kassa", {
             frm.trigger("update_balance");
         }
 
-        // Update balance_to on refresh for transfer
+        // Update balance_to on refresh for transfer/conversion
         if (frm.doc.mode_of_payment_to && frm.doc.company) {
             frm.trigger("update_balance_to");
         }
@@ -30,8 +45,15 @@ frappe.ui.form.on("Kassa", {
         // Set mode_of_payment_to query
         frm.trigger("set_mode_of_payment_to_query");
 
+        if (frm.doc.transaction_type === "Конвертация" && !frm.doc.exchange_rate) {
+            frm.trigger("fetch_exchange_rate");
+        }
+
         // Update balance label based on transaction type
         frm.trigger("update_balance_label");
+        frm.trigger("sync_currency_fields");
+        frm.trigger("update_exchange_fields");
+        frm.trigger("render_currency_info");
 
         // Update sub-account options on load
         if (frm.doc.expense_account) {
@@ -40,11 +62,17 @@ frappe.ui.form.on("Kassa", {
     },
 
     company: function(frm) {
+        frm._cash_account_to_currency = "";
         frm.set_value("mode_of_payment", "");
         frm.set_value("cash_account", "");
         frm.set_value("balance", 0);
+        frm.set_value("cash_account_to_currency", "");
+        frm.set_value("target_amount_currency", "");
         frm.set_value("party", "");
         frm.set_value("expense_account", "");
+        frm.trigger("sync_currency_fields");
+        frm.trigger("update_exchange_fields");
+        frm.trigger("render_currency_info");
     },
 
     mode_of_payment: function(frm) {
@@ -60,12 +88,17 @@ frappe.ui.form.on("Kassa", {
                         frm.set_value("cash_account", r.message.account);
                         frm.set_value("cash_account_currency", r.message.currency);
                         frm.trigger("update_balance");
-                        frm.trigger("validate_currency");
+                        frm.trigger("sync_currency_fields");
+                        frm.trigger("update_exchange_fields");
+                        frm.trigger("render_currency_info");
                     } else {
                         frappe.msgprint(__("Для данного способа оплаты не настроен счет кассы для компании {0}", [frm.doc.company]));
                         frm.set_value("cash_account", "");
                         frm.set_value("cash_account_currency", "");
                         frm.set_value("balance", 0);
+                        frm.trigger("sync_currency_fields");
+                        frm.trigger("update_exchange_fields");
+                        frm.trigger("render_currency_info");
                     }
                 }
             });
@@ -73,10 +106,13 @@ frappe.ui.form.on("Kassa", {
             frm.set_value("cash_account", "");
             frm.set_value("cash_account_currency", "");
             frm.set_value("balance", 0);
+            frm.trigger("sync_currency_fields");
+            frm.trigger("update_exchange_fields");
+            frm.trigger("render_currency_info");
         }
 
-        // Clear mode_of_payment_to when mode_of_payment changes (for transfer)
-        if (frm.doc.transaction_type === "Перемещения") {
+        // Clear mode_of_payment_to when mode_of_payment changes (for transfer/conversion)
+        if (in_list(["Перемещения", "Конвертация"], frm.doc.transaction_type)) {
             frm.set_value("mode_of_payment_to", "");
             frm.set_value("cash_account_to", "");
             frm.set_value("balance_to", 0);
@@ -107,13 +143,19 @@ frappe.ui.form.on("Kassa", {
         frm.set_value("party_name", "");
         frm.set_value("expense_account_name", "");
 
-        // Clear payment and transfer fields
+        // Clear payment and transfer/conversion fields
+        frm._cash_account_to_currency = "";
         frm.set_value("mode_of_payment", "");
         frm.set_value("cash_account", "");
         frm.set_value("balance", 0);
         frm.set_value("mode_of_payment_to", "");
         frm.set_value("cash_account_to", "");
+        frm.set_value("cash_account_to_currency", "");
+        frm.set_value("target_amount_currency", "");
         frm.set_value("balance_to", 0);
+        frm.set_value("exchange_rate", 0);
+        frm.set_value("debit_amount", 0);
+        frm.set_value("credit_amount", 0);
 
         // Set queries
         frm.trigger("set_mode_of_payment_query");
@@ -135,32 +177,59 @@ frappe.ui.form.on("Kassa", {
             });
         }
 
+        if (frm.doc.transaction_type === "Конвертация") {
+            frm.trigger("fetch_exchange_rate");
+        }
+
         // Update balance label
         frm.trigger("update_balance_label");
+        frm.trigger("sync_currency_fields");
+        frm.trigger("update_exchange_fields");
+        frm.trigger("render_currency_info");
     },
 
     mode_of_payment_to: function(frm) {
         if (frm.doc.mode_of_payment_to && frm.doc.company) {
             frappe.call({
-                method: "pokiza.pokiza_for_business.doctype.kassa.kassa.get_cash_account",
+                method: "pokiza.pokiza_for_business.doctype.kassa.kassa.get_cash_account_with_currency",
                 args: {
                     mode_of_payment: frm.doc.mode_of_payment_to,
                     company: frm.doc.company
                 },
                 callback: function(r) {
-                    if (r.message) {
-                        frm.set_value("cash_account_to", r.message);
+                    if (r.message && r.message.account) {
+                        frm.set_value("cash_account_to", r.message.account);
+                        frm._cash_account_to_currency = r.message.currency || "";
+                        frm.set_value("cash_account_to_currency", r.message.currency || "");
                         frm.trigger("update_balance_to");
+                        frm.trigger("validate_transfer_pair");
+                        if (frm.doc.transaction_type === "Конвертация") {
+                            frm.trigger("fetch_exchange_rate");
+                            frm.trigger("calculate_exchange_amounts");
+                        }
+                        frm.trigger("sync_currency_fields");
+                        frm.trigger("update_exchange_fields");
+                        frm.trigger("render_currency_info");
                     } else {
                         frappe.msgprint(__("Для данного способа оплаты не настроен счет кассы для компании {0}", [frm.doc.company]));
+                        frm._cash_account_to_currency = "";
                         frm.set_value("cash_account_to", "");
+                        frm.set_value("cash_account_to_currency", "");
                         frm.set_value("balance_to", 0);
+                        frm.trigger("sync_currency_fields");
+                        frm.trigger("update_exchange_fields");
+                        frm.trigger("render_currency_info");
                     }
                 }
             });
         } else {
+            frm._cash_account_to_currency = "";
             frm.set_value("cash_account_to", "");
+            frm.set_value("cash_account_to_currency", "");
             frm.set_value("balance_to", 0);
+            frm.trigger("sync_currency_fields");
+            frm.trigger("update_exchange_fields");
+            frm.trigger("render_currency_info");
         }
     },
 
@@ -181,13 +250,19 @@ frappe.ui.form.on("Kassa", {
 
     set_mode_of_payment_query: function(frm) {
         frm.set_query("mode_of_payment", function() {
-            return {};
+            return {
+                filters: {
+                    enabled: 1
+                }
+            };
         });
     },
 
     set_mode_of_payment_to_query: function(frm) {
         frm.set_query("mode_of_payment_to", function() {
-            let filters = {};
+            let filters = {
+                enabled: 1
+            };
 
             if (frm.doc.mode_of_payment) {
                 filters.name = ["!=", frm.doc.mode_of_payment];
@@ -197,8 +272,151 @@ frappe.ui.form.on("Kassa", {
         });
     },
 
+    validate_transfer_pair: function(frm) {
+        if (!in_list(["Перемещения", "Конвертация"], frm.doc.transaction_type)) return;
+        if (!frm.doc.cash_account || !frm.doc.cash_account_to) return;
+
+        frappe.db.get_value("Account", frm.doc.cash_account, "account_currency", function(from_r) {
+            frappe.db.get_value("Account", frm.doc.cash_account_to, "account_currency", function(to_r) {
+                const from_currency = from_r && from_r.account_currency;
+                const to_currency = to_r && to_r.account_currency;
+
+                if (!from_currency || !to_currency) return;
+
+                if (frm.doc.transaction_type === "Перемещения" && from_currency !== to_currency) {
+                    frappe.msgprint({
+                        title: __("Ошибка валюты"),
+                        indicator: "red",
+                        message: __("Для перемещения способы оплаты должны иметь одинаковую валюту.")
+                    });
+                }
+
+                if (frm.doc.transaction_type === "Конвертация" && from_currency === to_currency) {
+                    frappe.msgprint({
+                        title: __("Ошибка валюты"),
+                        indicator: "red",
+                        message: __("Для конвертации способы оплаты должны иметь разные валюты.")
+                    });
+                }
+            });
+        });
+    },
+
+    fetch_exchange_rate: function(frm) {
+        const pair = getExchangePair(frm);
+        if (!pair.from_currency || !pair.to_currency) {
+            return;
+        }
+
+        frappe.call({
+            method: "pokiza.pokiza_for_business.doctype.kassa.kassa.get_exchange_rate",
+            args: {
+                from_currency: pair.from_currency,
+                to_currency: pair.to_currency,
+                date: frm.doc.date || frappe.datetime.get_today()
+            },
+            callback: function(r) {
+                if (r.message) {
+                    frm.set_value("exchange_rate", r.message);
+                }
+            }
+        });
+    },
+
+    debit_amount: function(frm) {
+        frm.trigger("calculate_exchange_amounts");
+        frm.trigger("render_currency_info");
+    },
+
+    exchange_rate: function(frm) {
+        frm.trigger("calculate_exchange_amounts");
+        frm.trigger("render_currency_info");
+    },
+
+    amount: function(frm) {
+        frm.trigger("calculate_exchange_amounts");
+        frm.trigger("render_currency_info");
+    },
+
+    sync_currency_fields: function(frm) {
+        let targetCurrency = "";
+
+        if (frm.doc.transaction_type === "Конвертация") {
+            targetCurrency = frm.doc.cash_account_to_currency || getTargetCurrency(frm) || "";
+        } else if (isPartyMulticurrencyPayment(frm)) {
+            targetCurrency = frm.doc.party_currency || "";
+        }
+
+        frm.set_value("target_amount_currency", targetCurrency);
+        frm.refresh_fields([
+            "balance",
+            "amount",
+            "balance_to",
+            "debit_amount",
+            "credit_amount",
+        ]);
+    },
+
+    update_exchange_fields: function(frm) {
+        const showPartyExchange = isPartyMulticurrencyPayment(frm);
+        const showConversion = frm.doc.transaction_type === "Конвертация";
+        const showBlock = showPartyExchange || showConversion;
+
+        frm.set_df_property("section_break_conversion", "hidden", showBlock ? 0 : 1);
+        frm.set_df_property("column_break_conversion", "hidden", showBlock ? 0 : 1);
+        frm.set_df_property("exchange_rate", "hidden", showBlock ? 0 : 1);
+        frm.set_df_property("debit_amount", "hidden", showConversion ? 0 : 1);
+        frm.set_df_property("credit_amount", "hidden", showBlock ? 0 : 1);
+        frm.set_df_property("debit_amount", "read_only", showPartyExchange ? 1 : 0);
+        frm.set_df_property("credit_amount", "read_only", showPartyExchange ? 1 : 0);
+
+        if (showPartyExchange) {
+            frm.set_df_property("section_break_conversion", "label", "Мультивалютный платеж");
+            frm.set_df_property("exchange_rate", "label", `Курс ${frm.doc.cash_account_currency || ""} к ${frm.doc.party_currency || ""}`.trim());
+            frm.set_df_property("credit_amount", "label", `Сумма в валюте контрагента${frm.doc.party_currency ? ` (${frm.doc.party_currency})` : ""}`);
+        } else {
+            frm.set_df_property("section_break_conversion", "label", "Конвертация");
+            frm.set_df_property("exchange_rate", "label", "Курс");
+            frm.set_df_property("credit_amount", "label", "Сумма прихода");
+        }
+
+        if (showPartyExchange) {
+            if (frm.doc.mode_of_payment && frm.doc.party && (!frm.doc.exchange_rate || flt(frm.doc.exchange_rate) <= 0 || flt(frm.doc.exchange_rate) === 1)) {
+                frm.trigger("fetch_exchange_rate");
+            }
+            frm.trigger("calculate_exchange_amounts");
+        } else if (!showConversion) {
+            frm.set_value("exchange_rate", 0);
+            frm.set_value("debit_amount", 0);
+            frm.set_value("credit_amount", 0);
+        }
+
+        frm.trigger("sync_currency_fields");
+        frm.refresh_fields(["section_break_conversion", "exchange_rate", "debit_amount", "credit_amount"]);
+    },
+
+    calculate_exchange_amounts: function(frm) {
+        if (frm.doc.transaction_type === "Конвертация") {
+            if (!frm.doc.debit_amount || !frm.doc.exchange_rate) return;
+
+            const targetCurrency = getTargetCurrency(frm);
+            const precision = targetCurrency === "UZS" ? 0 : 2;
+            let credit = flt(frm.doc.debit_amount) * flt(frm.doc.exchange_rate);
+            frm.set_value("credit_amount", flt(credit, precision));
+            frm.trigger("render_currency_info");
+            return;
+        }
+
+        if (!isPartyMulticurrencyPayment(frm)) return;
+        if (!frm.doc.amount || !frm.doc.exchange_rate) return;
+
+        frm.set_value("debit_amount", flt(frm.doc.amount));
+        frm.set_value("credit_amount", flt(flt(frm.doc.amount) * flt(frm.doc.exchange_rate), 2));
+        frm.trigger("render_currency_info");
+    },
+
     update_balance_label: function(frm) {
-        if (frm.doc.transaction_type === "Перемещения") {
+        if (in_list(["Перемещения", "Конвертация"], frm.doc.transaction_type)) {
             frm.set_df_property("balance", "label", "Остаток (откуда)");
         } else {
             frm.set_df_property("balance", "label", "Остаток");
@@ -215,7 +433,7 @@ frappe.ui.form.on("Kassa", {
         if (frm.doc.party_type === "Расходы") {
             frm.set_df_property("expense_account", "reqd", 1);
             frm.set_df_property("party", "reqd", 0);
-        } else if (frm.doc.party_type === "Дивиденд") {
+        } else if (isDividendPartyType(frm.doc.party_type)) {
             frm.set_df_property("expense_account", "reqd", 0);
             frm.set_df_property("party", "reqd", 0);
         } else if (frm.doc.party_type) {
@@ -251,7 +469,9 @@ frappe.ui.form.on("Kassa", {
                     callback: function(r) {
                         if (r.message) {
                             frm.set_value("party_currency", r.message);
-                            frm.trigger("validate_currency");
+                            frm.trigger("sync_currency_fields");
+                            frm.trigger("update_exchange_fields");
+                            frm.trigger("render_currency_info");
                         }
                     }
                 });
@@ -259,7 +479,72 @@ frappe.ui.form.on("Kassa", {
         } else {
             frm.set_value("party_name", "");
             frm.set_value("party_currency", "");
+            frm.trigger("sync_currency_fields");
+            frm.trigger("update_exchange_fields");
+            frm.trigger("render_currency_info");
         }
+    },
+
+    render_currency_info: function(frm) {
+        const wrapper = frm.fields_dict.currency_info_html && frm.fields_dict.currency_info_html.$wrapper;
+        if (!wrapper) return;
+
+        const rows = [];
+        const txType = frm.doc.transaction_type;
+        const sourceCurrency = frm.doc.cash_account_currency;
+        const targetCurrency = getTargetCurrency(frm);
+        const sourceMode = frm.doc.mode_of_payment;
+        const targetMode = frm.doc.mode_of_payment_to;
+
+        if (txType) {
+            rows.push(`<div><strong>Операция:</strong> ${frappe.utils.escape_html(txType)}</div>`);
+        }
+
+        if (sourceMode || sourceCurrency) {
+            rows.push(
+                `<div><strong>Источник:</strong> ${frappe.utils.escape_html(sourceMode || "-")} ${sourceCurrency ? `(${frappe.utils.escape_html(sourceCurrency)})` : ""}</div>`
+            );
+        }
+
+        if (targetMode || targetCurrency) {
+            rows.push(
+                `<div><strong>Назначение:</strong> ${frappe.utils.escape_html(targetMode || "-")} ${targetCurrency ? `(${frappe.utils.escape_html(targetCurrency)})` : ""}</div>`
+            );
+        }
+
+        if (frm.doc.party && frm.doc.party_currency) {
+            rows.push(
+                `<div><strong>Контрагент:</strong> ${frappe.utils.escape_html(frm.doc.party)} (${frappe.utils.escape_html(frm.doc.party_currency)})</div>`
+            );
+        }
+
+        if (frm.doc.exchange_rate && (txType === "Конвертация" || isPartyMulticurrencyPayment(frm))) {
+            rows.push(
+                `<div><strong>Курс:</strong> 1 ${frappe.utils.escape_html(sourceCurrency || "-")} = ${frappe.format(frm.doc.exchange_rate, {fieldtype: "Float", precision: 6})} ${frappe.utils.escape_html((txType === "Конвертация" ? targetCurrency : frm.doc.party_currency) || "-")}</div>`
+            );
+        }
+
+        if (isPartyMulticurrencyPayment(frm) && frm.doc.credit_amount) {
+            rows.push(
+                `<div><strong>Сумма в валюте контрагента:</strong> ${frappe.format(frm.doc.credit_amount, {fieldtype: "Currency"})} ${frappe.utils.escape_html(frm.doc.party_currency || "")}</div>`
+            );
+        }
+
+        const note = getCurrencyInfoNote(frm, sourceCurrency, targetCurrency);
+        if (note) {
+            rows.push(`<div style="margin-top: 8px;"><strong>Подсказка:</strong> ${frappe.utils.escape_html(note)}</div>`);
+        }
+
+        if (!rows.length) {
+            wrapper.empty();
+            return;
+        }
+
+        wrapper.html(`
+            <div style="padding: 12px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fafafa; line-height: 1.6;">
+                ${rows.join("")}
+            </div>
+        `);
     },
 
     expense_account: function(frm) {
@@ -313,22 +598,94 @@ frappe.ui.form.on("Kassa", {
     },
 
     validate_currency: function(frm) {
-        if (frm.doc.cash_account_currency && frm.doc.party_currency) {
-            if (frm.doc.cash_account_currency !== frm.doc.party_currency) {
-                frappe.validated = false;
-                frappe.msgprint({
-                    title: __("Ошибка валюты"),
-                    indicator: "red",
-                    message: __("Валюта кассы ({0}) не совпадает с валютой контрагента ({1}). Выберите соответствующий способ оплаты.",
-                        [frm.doc.cash_account_currency, frm.doc.party_currency])
-                });
-            }
-        }
+        return;
     }
 });
 
 function has_field(frm, fieldname) {
     return Boolean(frm && frm.fields_dict && frm.fields_dict[fieldname]);
+}
+
+function getTargetCurrency(frm) {
+    return frm._cash_account_to_currency || getDefaultConversionTargetCurrency(frm) || "";
+}
+
+function getExchangePair(frm) {
+    if (frm.doc.transaction_type === "Конвертация") {
+        const inferredTargetCurrency = getTargetCurrency(frm) || getDefaultConversionTargetCurrency(frm);
+        return {
+            from_currency: frm.doc.cash_account_currency,
+            to_currency: inferredTargetCurrency
+        };
+    }
+
+    if (isPartyMulticurrencyPayment(frm)) {
+        return {
+            from_currency: frm.doc.cash_account_currency,
+            to_currency: frm.doc.party_currency
+        };
+    }
+
+    return {
+        from_currency: "",
+        to_currency: ""
+    };
+}
+
+function getDefaultConversionTargetCurrency(frm) {
+    const sourceCurrency = frm.doc.cash_account_currency;
+    if (!sourceCurrency) return "";
+
+    if (sourceCurrency === "USD") {
+        return "UZS";
+    }
+
+    if (sourceCurrency === "UZS") {
+        return "USD";
+    }
+
+    return "";
+}
+
+function isPartyMulticurrencyPayment(frm) {
+    return Boolean(
+        in_list(["Приход", "Расход"], frm.doc.transaction_type) &&
+        in_list(["Customer", "Supplier", "Employee"], frm.doc.party_type) &&
+        frm.doc.mode_of_payment &&
+        frm.doc.party &&
+        frm.doc.cash_account_currency &&
+        frm.doc.party_currency &&
+        frm.doc.cash_account_currency !== frm.doc.party_currency
+    );
+}
+
+function isDividendPartyType(partyType) {
+    return DIVIDEND_PARTY_TYPES.includes(partyType);
+}
+
+function getCurrencyInfoNote(frm, sourceCurrency, targetCurrency) {
+    if (frm.doc.transaction_type === "Перемещения") {
+        return "Перемещение должно быть между счетами одной валюты.";
+    }
+
+    if (frm.doc.transaction_type === "Конвертация") {
+        if (sourceCurrency && targetCurrency) {
+            return sourceCurrency === targetCurrency
+                ? "Для конвертации нужно выбрать счета с разной валютой."
+                : "Для конвертации выбраны счета с разной валютой. Проверьте курс и суммы.";
+        }
+        return "Для конвертации выберите источник, назначение и курс.";
+    }
+
+    if (isPartyMulticurrencyPayment(frm)) {
+        return "Будет создан мультивалютный Payment Entry: сумма кассы и сумма контрагента будут рассчитаны по курсу.";
+    }
+
+    if (frm.doc.transaction_type && frm.doc.party_type && frm.doc.party_currency) {
+        return "Для платежа будет использован реальный ledger-счет контрагента из ERPNext.";
+    }
+
+    return "";
 }
 
 function get_party_name_field(party_type) {
