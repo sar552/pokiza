@@ -3,14 +3,6 @@
 
 const DEFAULT_PRODUCTION_WAREHOUSE = "Склад сырьё - P";
 const FINISHED_GOODS_ITEM_GROUP = "Готовый продукт";
-const BOM_ITEM_READ_ONLY_FIELDS = [
-    "item_code",
-    "item_name",
-    "source_warehouse",
-    "required_qty",
-    "available_qty",
-    "uom"
-];
 
 frappe.ui.form.on('Production Entry', {
     setup: function(frm) {
@@ -21,9 +13,6 @@ frappe.ui.form.on('Production Entry', {
                 }
             };
         });
-
-        frm.set_df_property("items", "cannot_add_rows", true);
-        frm.set_df_property("items", "cannot_delete_rows", true);
 
         // Set default target warehouse for new documents
         if (frm.is_new() && !frm.doc.target_warehouse) {
@@ -152,8 +141,23 @@ frappe.ui.form.on('Production Entry Item', {
         if (row.item_code && row.source_warehouse) {
             update_available_qty(frm, row);
         }
+    },
+
+    required_qty: function(frm, cdt, cdn) {
+        // Allow manual editing, just refresh
+        frm.refresh_field("items");
     }
 });
+
+function update_all_available_qty(frm) {
+    if (!frm.doc.items || frm.doc.items.length === 0) return;
+
+    frm.doc.items.forEach(function(item) {
+        if (item.item_code && item.source_warehouse) {
+            update_available_qty(frm, item);
+        }
+    });
+}
 
 function fetch_bom_items(frm) {
     frappe.call({
@@ -179,16 +183,6 @@ function fetch_bom_items(frm) {
                 });
                 frm.refresh_field("items");
             }
-        }
-    });
-}
-
-function update_all_available_qty(frm) {
-    if (!frm.doc.items || frm.doc.items.length === 0) return;
-
-    frm.doc.items.forEach(function(item) {
-        if (item.item_code && item.source_warehouse) {
-            update_available_qty(frm, item);
         }
     });
 }
