@@ -1,3 +1,7 @@
+import base64
+import json
+import os
+
 import frappe
 from frappe.utils import flt
 
@@ -22,6 +26,11 @@ def format_balance(value):
 def format_qty(value):
     """Qty ni 2 decimal bilan format qilish"""
     return round(flt(value), 2) if value is not None else None
+
+
+def voucher_type_matches(row, base_voucher_type):
+    voucher_type = (row or {}).get("voucher_type") or ""
+    return voucher_type == base_voucher_type or voucher_type.startswith(f"{base_voucher_type} ")
 
 
 def get_columns():
@@ -616,3 +625,121 @@ def get_summary_html(data, filters):
     """
     
     return html
+
+
+@frappe.whitelist()
+def generate_akt_sverka_pdf(filters):
+    from frappe.utils.pdf import get_pdf
+
+    if isinstance(filters, str):
+        filters = json.loads(filters)
+
+    data = get_data(filters)
+
+    company = (
+        frappe.defaults.get_user_default("Company")
+        or frappe.db.get_single_value("Global Defaults", "default_company")
+        or ""
+    )
+
+    summary = _build_pdf_summary(data)
+    html = _render_pdf_html(data, filters, company, summary)
+
+    pdf_options = {
+        "page-size": "A4",
+        "orientation": "Landscape",
+        "margin-top": "12mm",
+        "margin-right": "8mm",
+        "margin-bottom": "12mm",
+        "margin-left": "8mm",
+        "encoding": "UTF-8",
+        "no-outline": None,
+    }
+
+    try:
+        pdf_content = get_pdf(html, options=pdf_options)
+    except Exception as e:
+        frappe.log_error(message=frappe.get_traceback(), title="Akt Sverka PDF Error")
+        frappe.throw(
+            f"PDF генерациясида хато юз берди: {str(e)}\n"
+            "Лог: Site Logs > Error Log да кўринг."
+        )
+
+    return base64.b64encode(pdf_content).decode("utf-8")
+
+
+def _fmt_num(value):
+    try:
+        return "{:,.2f}".format(float(value or 0))
+    except (TypeError, ValueError):
+        return "0.00"
+
+
+def _build_pdf_summary(data):
+    if not data:
+        return {
+            "opening_credit": 0.0,
+            "opening_debit": 0.0,
+            "goods_credit": 0.0,
+            "goods_debit": 0.0,
+            "money_credit": 0.0,
+            "money_debit": 0.0,
+            "accruals_credit": 0.0,
+            "accruals_debit": 0.0,
+            "closing_credit": 0.0,
+            "closing_debit": 0.0,
+        }
+
+    opening_balance = flt(data[0].get("balance") or 0)
+
+    closing_balance = 0.0
+    total_rows = [r for r in data if r.get("voucher_type") == "Total"]
+    if total_rows:
+        closing_balance = flt(total_rows[0].get("balance") or 0)
+    elif data:
+        closing_balance = flt(data[-1].get("balance") or 0)
+
+    def _credit(voucher_type):
+        return sum(flt(r.get("credit", 0)) for r in data if voucher_type_matches(r, voucher_type))
+
+    def _debit(voucher_type):
+        return sum(flt(r.get("debit", 0)) for r in data if voucher_type_matches(r, voucher_type))
+
+    return {
+        "opening_credit": opening_balance if opening_balance > 0 else 0.0,
+        "opening_debit": abs(opening_balance) if opening_balance < 0 else 0.0,
+        "goods_credit": _credit("Purchase Invoice"),
+        "goods_debit": _debit("Sales Invoice"),
+        "money_credit": _credit("Payment Entry"),
+        "money_debit": _debit("Payment Entry"),
+        "accruals_credit": _credit("Journal Entry") + _credit("Salary Slip"),
+        "accruals_debit": _debit("Journal Entry") + _debit("Salary Slip"),
+        "closing_credit": closing_balance if closing_balance > 0 else 0.0,
+        "closing_debit": abs(closing_balance) if closing_balance < 0 else 0.0,
+    }
+
+
+def _render_pdf_html(data, filters, company, summary):
+    template_path = os.path.join(os.path.dirname(__file__), "akt_sverka_template.html")
+
+    if not os.path.exists(template_path):
+        frappe.throw(
+            f"PDF шаблон топилмади: {template_path}\n"
+            "akt_sverka_template.html файлини report папкасига қўйинг."
+        )
+
+    with open(template_path, "r", encoding="utf-8") as f:
+        template_str = f.read()
+
+    context = {
+        "rows": data,
+        "company": company,
+        "summary": summary,
+        "party": filters.get("party", ""),
+        "party_type": filters.get("party_type", ""),
+        "from_date": filters.get("from_date", ""),
+        "to_date": filters.get("to_date", ""),
+        "fmt": _fmt_num,
+    }
+
+    return frappe.render_template(template_str, context)

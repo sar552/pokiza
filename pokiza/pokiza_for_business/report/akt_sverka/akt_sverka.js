@@ -17,6 +17,87 @@ frappe.query_reports["Akt Sverka"] = {
                 party_type: party_type || ''
             });
         });
+
+        report.page.add_inner_button(__("PDF юклаш"), function() {
+            var filters = frappe.query_report.get_values();
+
+            if (!filters || !filters.party) {
+                frappe.msgprint({
+                    title: __("Хато"),
+                    message: __("Контрагентни танланг"),
+                    indicator: "red"
+                });
+                return;
+            }
+
+            if (!filters.from_date || !filters.to_date) {
+                frappe.msgprint({
+                    title: __("Хато"),
+                    message: __("Санани кўрсатинг"),
+                    indicator: "red"
+                });
+                return;
+            }
+
+            frappe.dom.freeze(__("PDF тайёрланмоқда... Илтимос кутинг"));
+
+            frappe.call({
+                method: "pokiza.pokiza_for_business.report.akt_sverka.akt_sverka.generate_akt_sverka_pdf",
+                args: { filters: filters },
+                timeout: 120,
+                callback: function(r) {
+                    frappe.dom.unfreeze();
+
+                    if (!r.message) {
+                        frappe.msgprint({
+                            title: __("Хато"),
+                            message: __("PDF бўш қайтди. Error Log ни текширинг."),
+                            indicator: "red"
+                        });
+                        return;
+                    }
+
+                    try {
+                        var byteChars = atob(r.message);
+                        var byteNumbers = new Array(byteChars.length);
+                        for (var i = 0; i < byteChars.length; i++) {
+                            byteNumbers[i] = byteChars.charCodeAt(i);
+                        }
+
+                        var byteArray = new Uint8Array(byteNumbers);
+                        var blob = new Blob([byteArray], { type: "application/pdf" });
+                        var url = URL.createObjectURL(blob);
+                        var filename = "Akt_Sverka_"
+                            + (filters.party || "")
+                            + "_" + (filters.from_date || "")
+                            + "_" + (filters.to_date || "")
+                            + ".pdf";
+
+                        var a = document.createElement("a");
+                        a.href = url;
+                        a.download = filename;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    } catch (e) {
+                        frappe.msgprint({
+                            title: __("Хато"),
+                            message: __("PDF юклашда браузер хатоси: ") + e.message,
+                            indicator: "red"
+                        });
+                    }
+                },
+                error: function() {
+                    frappe.dom.unfreeze();
+                    frappe.msgprint({
+                        title: __("Сервер хатоси"),
+                        message: __("PDF генерация қилишда хато. Error Log ни текширинг."),
+                        indicator: "red"
+                    });
+                }
+            });
+        });
     },
     "filters": [
         {
