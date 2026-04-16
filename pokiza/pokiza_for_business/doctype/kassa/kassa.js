@@ -55,11 +55,7 @@ frappe.ui.form.on("Kassa", {
         frm.trigger("update_exchange_fields");
         frm.trigger("render_currency_info");
 
-        // Update sub-account options on load
-        if (frm.doc.expense_account) {
-            frm.trigger("update_sub_account_options");
-        }
-    },
+	    },
 
     company: function(frm) {
         frm._cash_account_to_currency = "";
@@ -129,7 +125,7 @@ frappe.ui.form.on("Kassa", {
                     company: frm.doc.company
                 },
                 callback: function(r) {
-                    frm.set_value("balance", r.message || 0);
+                    set_derived_value(frm, "balance", r.message || 0);
                 }
             });
         }
@@ -242,7 +238,7 @@ frappe.ui.form.on("Kassa", {
                     company: frm.doc.company
                 },
                 callback: function(r) {
-                    frm.set_value("balance_to", r.message || 0);
+                    set_derived_value(frm, "balance_to", r.message || 0);
                 }
             });
         }
@@ -324,16 +320,36 @@ frappe.ui.form.on("Kassa", {
     },
 
     debit_amount: function(frm) {
+        if (frm.doc.transaction_type === "Конвертация") {
+            set_derived_value(frm, "manual_credit_amount", 0);
+        }
         frm.trigger("calculate_exchange_amounts");
         frm.trigger("render_currency_info");
     },
 
     exchange_rate: function(frm) {
+        set_derived_value(frm, "manual_credit_amount", 0);
         frm.trigger("calculate_exchange_amounts");
         frm.trigger("render_currency_info");
     },
 
+    credit_amount: function(frm) {
+        if (!isPartyMulticurrencyPayment(frm)) {
+            return;
+        }
+
+        if (frm._setting_credit_amount_from_script) {
+            return;
+        }
+
+        set_derived_value(frm, "manual_credit_amount", flt(frm.doc.credit_amount) > 0 ? 1 : 0);
+        frm.trigger("render_currency_info");
+    },
+
     amount: function(frm) {
+        if (isPartyMulticurrencyPayment(frm)) {
+            set_derived_value(frm, "manual_credit_amount", 0);
+        }
         frm.trigger("calculate_exchange_amounts");
         frm.trigger("render_currency_info");
     },
@@ -347,7 +363,7 @@ frappe.ui.form.on("Kassa", {
             targetCurrency = frm.doc.party_currency || "";
         }
 
-        frm.set_value("target_amount_currency", targetCurrency);
+        set_derived_value(frm, "target_amount_currency", targetCurrency);
         frm.refresh_fields([
             "balance",
             "amount",
@@ -368,7 +384,7 @@ frappe.ui.form.on("Kassa", {
         frm.set_df_property("debit_amount", "hidden", showConversion ? 0 : 1);
         frm.set_df_property("credit_amount", "hidden", showBlock ? 0 : 1);
         frm.set_df_property("debit_amount", "read_only", showPartyExchange ? 1 : 0);
-        frm.set_df_property("credit_amount", "read_only", showPartyExchange ? 1 : 0);
+        frm.set_df_property("credit_amount", "read_only", showConversion ? 1 : 0);
 
         if (showPartyExchange) {
             frm.set_df_property("section_break_conversion", "label", "Мультивалютный платеж");
@@ -402,7 +418,9 @@ frappe.ui.form.on("Kassa", {
             const targetCurrency = getTargetCurrency(frm);
             const precision = targetCurrency === "UZS" ? 0 : 2;
             let credit = flt(frm.doc.debit_amount) * flt(frm.doc.exchange_rate);
-            frm.set_value("credit_amount", flt(credit, precision));
+            frm._setting_credit_amount_from_script = true;
+            set_derived_value(frm, "credit_amount", flt(credit, precision));
+            frm._setting_credit_amount_from_script = false;
             frm.trigger("render_currency_info");
             return;
         }
@@ -410,8 +428,13 @@ frappe.ui.form.on("Kassa", {
         if (!isPartyMulticurrencyPayment(frm)) return;
         if (!frm.doc.amount || !frm.doc.exchange_rate) return;
 
-        frm.set_value("debit_amount", flt(frm.doc.amount));
-        frm.set_value("credit_amount", flt(flt(frm.doc.amount) * flt(frm.doc.exchange_rate), 2));
+        set_derived_value(frm, "debit_amount", flt(frm.doc.amount));
+
+        if (!cint(frm.doc.manual_credit_amount)) {
+            frm._setting_credit_amount_from_script = true;
+            set_derived_value(frm, "credit_amount", flt(flt(frm.doc.amount) * flt(frm.doc.exchange_rate), 2));
+            frm._setting_credit_amount_from_script = false;
+        }
         frm.trigger("render_currency_info");
     },
 
@@ -547,55 +570,17 @@ frappe.ui.form.on("Kassa", {
         `);
     },
 
-    expense_account: function(frm) {
-        if (frm.doc.expense_account) {
-            frappe.db.get_value("Account", frm.doc.expense_account, "account_name", function(r) {
-                if (r && r.account_name) {
-                    frm.set_value("expense_account_name", r.account_name);
-                }
-            });
-            // Fetch and set sub-account options
-            frm.trigger("update_sub_account_options");
-        } else {
-            frm.set_value("expense_account_name", "");
-            if (has_field(frm, "custom_sub_account_name")) {
-                frm.set_df_property("custom_sub_account_name", "options", [""]);
-                frm.set_value("custom_sub_account_name", "");
-            }
-        }
-    },
-
-    update_sub_account_options: function(frm) {
-        if (frm.doc.expense_account && has_field(frm, "custom_sub_account_name")) {
-            frappe.call({
-                method: "frappe.client.get_value",
-                args: {
-                    doctype: "Account Name Mapping",
-                    filters: { account: frm.doc.expense_account },
-                    fieldname: "name"
-                },
-                callback: function(r) {
-                    if (r.message && r.message.name) {
-                        frappe.model.with_doc("Account Name Mapping", r.message.name, function() {
-                            let mapping_doc = frappe.get_doc("Account Name Mapping", r.message.name);
-                            let options = [""];
-                            if (mapping_doc.mapping_items) {
-                                mapping_doc.mapping_items.forEach(function(item) {
-                                    options.push(item.sub_name);
-                                });
-                            }
-                            frm.set_df_property("custom_sub_account_name", "options", options);
-                            frm.refresh_field("custom_sub_account_name");
-                        });
-                    } else {
-                        frm.set_df_property("custom_sub_account_name", "options", [""]);
-                        frm.refresh_field("custom_sub_account_name");
-                        frm.set_value("custom_sub_account_name", "");
-                    }
-                }
-            });
-        }
-    },
+	    expense_account: function(frm) {
+	        if (frm.doc.expense_account) {
+	            frappe.db.get_value("Account", frm.doc.expense_account, "account_name", function(r) {
+	                if (r && r.account_name) {
+	                    frm.set_value("expense_account_name", r.account_name);
+	                }
+	            });
+	        } else {
+	            frm.set_value("expense_account_name", "");
+	        }
+	    },
 
     validate_currency: function(frm) {
         return;
@@ -604,6 +589,18 @@ frappe.ui.form.on("Kassa", {
 
 function has_field(frm, fieldname) {
     return Boolean(frm && frm.fields_dict && frm.fields_dict[fieldname]);
+}
+
+function set_derived_value(frm, fieldname, value) {
+    const normalizedCurrent = frm.doc[fieldname] == null ? "" : frm.doc[fieldname];
+    const normalizedNext = value == null ? "" : value;
+
+    if (normalizedCurrent === normalizedNext) {
+        return;
+    }
+
+    frm.doc[fieldname] = value;
+    frm.refresh_field(fieldname);
 }
 
 function getTargetCurrency(frm) {

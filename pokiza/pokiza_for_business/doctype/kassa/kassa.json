@@ -21,12 +21,6 @@
   "section_break_transfer",
   "column_break_transfer",
   "balance_to",
-  "section_break_conversion",
-  "exchange_rate",
-  "column_break_conversion",
-  "debit_amount",
-  "credit_amount",
-  "target_amount_currency",
   "section_break_party",
   "party_type",
   "party",
@@ -34,11 +28,17 @@
   "party_currency",
   "column_break_2",
   "expense_account",
-  "custom_sub_account_name",
   "expense_account_name",
   "section_break_amount",
   "column_break_3",
   "amount",
+  "section_break_conversion",
+  "exchange_rate",
+  "column_break_conversion",
+  "debit_amount",
+  "credit_amount",
+  "target_amount_currency",
+  "manual_credit_amount",
   "section_break_details",
   "remarks",
   "section_break_currency_info",
@@ -188,6 +188,13 @@
    "read_only": 1
   },
   {
+   "default": "0",
+   "fieldname": "manual_credit_amount",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Manual Credit Amount"
+  },
+  {
    "fieldname": "section_break_party",
    "fieldtype": "Section Break",
    "label": "Контрагент"
@@ -229,13 +236,6 @@
    "fieldtype": "Link",
    "label": "Счет расходов",
    "options": "Account"
-  },
-  {
-   "depends_on": "eval:doc.party_type === 'Расходы'",
-   "description": "Tanlangan hisobga tegishli quyi nomni tanlang.",
-   "fieldname": "custom_sub_account_name",
-   "fieldtype": "Select",
-   "label": "Sub Account Name"
   },
   {
    "fetch_from": "expense_account.account_name",

@@ -4,7 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt
+from frappe.utils import cint, flt
 from erpnext.accounts.party import get_party_account as erpnext_get_party_account
 
 MODE_OF_PAYMENT_CASH_UZS_NAMES = ("Наличый UZS", "Наличный UZS")
@@ -180,6 +180,7 @@ class Kassa(Document):
                 self.exchange_rate = 0
                 self.debit_amount = 0
                 self.credit_amount = 0
+                self.manual_credit_amount = 0
             return
 
         if not self.exchange_rate or flt(self.exchange_rate) <= 0 or flt(self.exchange_rate) == 1:
@@ -195,7 +196,12 @@ class Kassa(Document):
             )
 
         self.debit_amount = flt(self.amount)
-        self.credit_amount = flt(flt(self.amount) * flt(self.exchange_rate), 2)
+
+        if cint(self.manual_credit_amount) and flt(self.credit_amount) > 0:
+            self.credit_amount = flt(self.credit_amount, 2)
+        else:
+            self.credit_amount = flt(flt(self.amount) * flt(self.exchange_rate), 2)
+            self.manual_credit_amount = 0
 
     def create_dividend_journal_entry(self):
         """Dividend uchun Journal Entry yaratish."""
