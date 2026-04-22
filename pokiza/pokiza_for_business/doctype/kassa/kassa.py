@@ -16,6 +16,7 @@ DIVIDEND_ACCOUNT_NUMBERS = {
     "Дивиденд 2": "3201",
     "Дивиденд 3": "3202",
 }
+EXPENSE_PARENT_ACCOUNT_NUMBER = "5200"
 
 
 def is_cash_uzs_mode_of_payment(mode_of_payment):
@@ -499,6 +500,7 @@ class Kassa(Document):
             if self.party_type == "Расходы":
                 if not self.expense_account:
                     frappe.throw(_("Пожалуйста, выберите счет расходов"))
+                validate_expense_account(self.expense_account, self.company)
                 self.party = None
             elif is_dividend_party_type(self.party_type):
                 self.party = None
@@ -676,8 +678,12 @@ def get_account_balance(account, company):
 
 @frappe.whitelist()
 def get_expense_accounts(doctype, txt, searchfield, start, page_len, filters):
-    """Expense accountlarni olish"""
-    company = filters.get("company")
+    """5200 accounti ichidagi expense accountlarni olish."""
+    company = (filters or {}).get("company")
+    parent_account = get_expense_parent_account(company)
+
+    if not parent_account:
+        return []
 
     return frappe.db.sql("""
         SELECT name, account_name
@@ -685,15 +691,80 @@ def get_expense_accounts(doctype, txt, searchfield, start, page_len, filters):
         WHERE company = %(company)s
         AND root_type = 'Expense'
         AND is_group = 0
+        AND lft > %(parent_lft)s
+        AND rgt < %(parent_rgt)s
         AND (name LIKE %(txt)s OR account_name LIKE %(txt)s)
         ORDER BY name
         LIMIT %(start)s, %(page_len)s
     """, {
         "company": company,
+        "parent_lft": parent_account.lft,
+        "parent_rgt": parent_account.rgt,
         "txt": f"%{txt}%",
         "start": start,
         "page_len": page_len
     })
+
+
+def get_expense_parent_account(company):
+    """5200 parent accountni company bo'yicha topish."""
+    if not company:
+        return None
+
+    accounts = frappe.db.sql(
+        """
+        SELECT name, lft, rgt
+        FROM `tabAccount`
+        WHERE company = %(company)s
+        AND (
+            account_number = %(account_number)s
+            OR name LIKE %(name_pattern)s
+        )
+        ORDER BY
+            CASE WHEN account_number = %(account_number)s THEN 0 ELSE 1 END,
+            is_group DESC,
+            name
+        LIMIT 1
+        """,
+        {
+            "company": company,
+            "account_number": EXPENSE_PARENT_ACCOUNT_NUMBER,
+            "name_pattern": f"{EXPENSE_PARENT_ACCOUNT_NUMBER}%",
+        },
+        as_dict=True,
+    )
+
+    return accounts[0] if accounts else None
+
+
+def validate_expense_account(expense_account, company):
+    """Expense account 5200 ichidagi leaf account ekanini tekshirish."""
+    parent_account = get_expense_parent_account(company)
+
+    if not parent_account:
+        frappe.throw(_("Не найден счет расходов {0} для компании {1}").format(
+            EXPENSE_PARENT_ACCOUNT_NUMBER,
+            company,
+        ))
+
+    account = frappe.db.get_value(
+        "Account",
+        expense_account,
+        ["company", "root_type", "is_group", "lft", "rgt"],
+        as_dict=True,
+    )
+
+    if (
+        not account
+        or account.company != company
+        or account.root_type != "Expense"
+        or cint(account.is_group)
+        or account.lft <= parent_account.lft
+        or account.rgt >= parent_account.rgt
+    ):
+        frappe.throw(_("Счет расходов должен быть внутри счета {0}").format(
+            parent_account.name
+        ))
 
 
 @frappe.whitelist()

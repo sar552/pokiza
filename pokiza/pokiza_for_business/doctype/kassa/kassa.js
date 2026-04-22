@@ -21,10 +21,9 @@ frappe.ui.form.on("Kassa", {
         // Set expense account query
         frm.set_query("expense_account", function() {
             return {
+                query: "pokiza.pokiza_for_business.doctype.kassa.kassa.get_expense_accounts",
                 filters: {
-                    company: frm.doc.company,
-                    root_type: "Expense",
-                    is_group: 0
+                    company: frm.doc.company
                 }
             };
         });
