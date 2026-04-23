@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from pokiza.pokiza_for_business.doctype.kassa.kassa import Kassa
+from pokiza.pokiza_for_business.doctype.kassa.kassa import Kassa, get_exchange_rate
 
 
 def make_kassa_doc(**overrides):
@@ -55,6 +55,33 @@ class FakePaymentEntry:
         self.name = "ACC-PAY-TEST-0001"
         self.inserted = False
         self.submitted = False
+
+    def insert(self):
+        self.inserted = True
+
+    def submit(self):
+        self.submitted = True
+
+
+class FakeJournalEntry:
+    def __init__(self):
+        self.voucher_type = None
+        self.posting_date = None
+        self.company = None
+        self.cheque_no = None
+        self.cheque_date = None
+        self.user_remark = None
+        self.multi_currency = 0
+        self.accounts = []
+        self.flags = SimpleNamespace(ignore_permissions=False)
+        self.name = "ACC-JV-TEST-0001"
+        self.inserted = False
+        self.submitted = False
+
+    def append(self, _table, data):
+        row = SimpleNamespace(**data)
+        self.accounts.append(row)
+        return row
 
     def insert(self):
         self.inserted = True
@@ -196,6 +223,28 @@ class UnitTestKassa(FrappeTestCase):
         self.assertEqual(doc.credit_amount, 1800000)
         self.assertEqual(doc.manual_credit_amount, 1)
 
+    @patch("pokiza.pokiza_for_business.doctype.kassa.kassa.get_exchange_rate", return_value=0.000081967)
+    def test_set_payment_exchange_details_replaces_rounded_small_exchange_rate(self, _mocked_rate):
+        doc = make_kassa_doc(
+            cash_account_currency="UZS",
+            party_currency="USD",
+            amount=400000,
+            exchange_rate=0.0001,
+            credit_amount=32.79,
+            manual_credit_amount=0,
+        )
+        doc.set_payment_exchange_details()
+
+        self.assertEqual(doc.debit_amount, 400000)
+        self.assertEqual(doc.exchange_rate, 0.000081967)
+        self.assertEqual(doc.credit_amount, 32.79)
+
+    @patch("pokiza.pokiza_for_business.doctype.kassa.kassa.frappe.db.get_value")
+    def test_get_exchange_rate_reverse_keeps_small_rate_precision(self, mocked_get_value):
+        mocked_get_value.side_effect = [None, 12190]
+
+        self.assertEqual(get_exchange_rate("UZS", "USD", "2026-04-23"), 0.000082034)
+
     @patch("pokiza.pokiza_for_business.doctype.kassa.kassa.frappe.msgprint")
     @patch("pokiza.pokiza_for_business.doctype.kassa.kassa.frappe.utils.get_link_to_form", return_value="PAYMENT-LINK")
     @patch("pokiza.pokiza_for_business.doctype.kassa.kassa.frappe.get_cached_value")
@@ -238,6 +287,54 @@ class UnitTestKassa(FrappeTestCase):
         self.assertEqual(fake_pe.paid_amount, 183)
         self.assertEqual(fake_pe.received_amount, 1800000)
         self.assertEqual(fake_pe.payment_type, "Pay")
+
+    @patch("pokiza.pokiza_for_business.doctype.kassa.kassa.frappe.msgprint")
+    @patch("pokiza.pokiza_for_business.doctype.kassa.kassa.frappe.utils.get_link_to_form", return_value="JE-LINK")
+    @patch("pokiza.pokiza_for_business.doctype.kassa.kassa.get_exchange_rate", return_value=0.000081967)
+    @patch("pokiza.pokiza_for_business.doctype.kassa.kassa.frappe.get_cached_value")
+    @patch("pokiza.pokiza_for_business.doctype.kassa.kassa.frappe.new_doc")
+    def test_create_expense_journal_entry_keeps_account_currency_amount(
+        self,
+        mocked_new_doc,
+        mocked_get_cached_value,
+        _mocked_exchange_rate,
+        _mocked_link,
+        _mocked_msgprint,
+    ):
+        fake_je = FakeJournalEntry()
+        mocked_new_doc.return_value = fake_je
+
+        lookup = {
+            ("Account", "1110 - Наличные UZB - P", "account_currency"): "UZS",
+            ("Account", "5206 - Цех - P", "account_currency"): "UZS",
+            ("Company", "Pokiza", "default_currency"): "USD",
+        }
+        mocked_get_cached_value.side_effect = lambda doctype, name, fieldname: lookup.get((doctype, name, fieldname))
+
+        doc = Kassa({
+            "doctype": "Kassa",
+            "date": "2026-04-23",
+            "transaction_type": "Расход",
+            "company": "Pokiza",
+            "mode_of_payment": "Наличый UZS",
+            "cash_account": "1110 - Наличные UZB - P",
+            "cash_account_currency": "UZS",
+            "party_type": "Расходы",
+            "expense_account": "5206 - Цех - P",
+            "amount": 11000000,
+        })
+        doc.name = "KASSA-TEST-0001"
+        doc.set_linked_document = MagicMock()
+
+        doc.create_expense_journal_entry()
+
+        self.assertTrue(fake_je.inserted)
+        self.assertTrue(fake_je.submitted)
+        self.assertEqual(fake_je.multi_currency, 1)
+        self.assertEqual(fake_je.accounts[0].credit_in_account_currency, 11000000)
+        self.assertEqual(fake_je.accounts[1].debit_in_account_currency, 11000000)
+        self.assertAlmostEqual(fake_je.accounts[0].credit, fake_je.accounts[1].debit)
+        self.assertEqual(fake_je.accounts[1].exchange_rate, 0.000081967)
 
 
 class IntegrationTestKassa(FrappeTestCase):

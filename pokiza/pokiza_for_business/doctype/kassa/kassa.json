@@ -159,7 +159,7 @@
    "fieldname": "exchange_rate",
    "fieldtype": "Float",
    "label": "Курс",
-   "precision": "4"
+   "precision": "9"
   },
   {
    "depends_on": "eval:doc.transaction_type === 'Конвертация' || (in_list(['Приход', 'Расход'], doc.transaction_type) && in_list(['Customer', 'Supplier', 'Employee'], doc.party_type))",

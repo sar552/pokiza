@@ -31,6 +31,18 @@ def is_dividend_party_type(party_type):
     return party_type in DIVIDEND_ACCOUNT_NUMBERS
 
 
+def get_account_currency_amount(company_amount, account_currency, company_currency, date):
+    """Return amount/rate for a JE row in the row account currency."""
+    if account_currency == company_currency:
+        return flt(company_amount), 1
+
+    exchange_rate = get_exchange_rate(account_currency, company_currency, date)
+    if not exchange_rate or flt(exchange_rate) <= 0:
+        frappe.throw(_("Не найден курс {0} к валюте компании {1}").format(account_currency, company_currency))
+
+    return flt(flt(company_amount) / flt(exchange_rate)), flt(exchange_rate)
+
+
 class Kassa(Document):
     def validate(self):
         self.set_default_company()
@@ -184,10 +196,16 @@ class Kassa(Document):
                 self.manual_credit_amount = 0
             return
 
-        if not self.exchange_rate or flt(self.exchange_rate) <= 0 or flt(self.exchange_rate) == 1:
-            self.exchange_rate = get_exchange_rate(
-                self.cash_account_currency, self.party_currency, self.date
-            )
+        fetched_exchange_rate = get_exchange_rate(
+            self.cash_account_currency, self.party_currency, self.date
+        )
+        if (
+            not self.exchange_rate
+            or flt(self.exchange_rate) <= 0
+            or flt(self.exchange_rate) == 1
+            or (flt(self.exchange_rate) < 0.001 and fetched_exchange_rate)
+        ):
+            self.exchange_rate = fetched_exchange_rate
 
         if not self.exchange_rate or flt(self.exchange_rate) <= 0:
             frappe.throw(
@@ -236,21 +254,28 @@ class Kassa(Document):
             exchange_rate = get_exchange_rate(cash_account_currency, company_currency, self.date)
             if not exchange_rate or exchange_rate == 0:
                 exchange_rate = 1
+            company_amount = flt(self.amount) * exchange_rate
+            dividend_account_currency = (
+                frappe.get_cached_value("Account", dividend_account, "account_currency") or company_currency
+            )
+            dividend_amount, dividend_exchange_rate = get_account_currency_amount(
+                company_amount, dividend_account_currency, company_currency, self.date
+            )
 
             je.append("accounts", {
                 "account": self.cash_account,
                 "credit_in_account_currency": flt(self.amount),
                 "account_currency": cash_account_currency,
                 "exchange_rate": exchange_rate,
-                "credit": flt(self.amount) * exchange_rate if exchange_rate else flt(self.amount)
+                "credit": company_amount
             })
 
             je.append("accounts", {
                 "account": dividend_account,
-                "debit_in_account_currency": flt(self.amount) * exchange_rate if exchange_rate else flt(self.amount),
-                "account_currency": company_currency,
-                "exchange_rate": 1,
-                "debit": flt(self.amount) * exchange_rate if exchange_rate else flt(self.amount)
+                "debit_in_account_currency": dividend_amount,
+                "account_currency": dividend_account_currency,
+                "exchange_rate": dividend_exchange_rate,
+                "debit": company_amount
             })
         else:
             je.append("accounts", {
@@ -305,22 +330,26 @@ class Kassa(Document):
             exchange_rate = get_exchange_rate(cash_account_currency, company_currency, self.date)
             if not exchange_rate or exchange_rate == 0:
                 exchange_rate = 1
+            company_amount = flt(self.amount) * exchange_rate
+            expense_amount, expense_exchange_rate = get_account_currency_amount(
+                company_amount, expense_account_currency, company_currency, self.date
+            )
 
             je.append("accounts", {
                 "account": self.cash_account,
                 "credit_in_account_currency": flt(self.amount),
                 "account_currency": cash_account_currency,
                 "exchange_rate": exchange_rate,
-                "credit": flt(self.amount) * exchange_rate if exchange_rate else flt(self.amount)
+                "credit": company_amount
             })
 
             je.append("accounts", {
                 "account": self.expense_account,
                 "cost_center": cost_center,
-                "debit_in_account_currency": flt(self.amount) * exchange_rate if exchange_rate else flt(self.amount),
+                "debit_in_account_currency": expense_amount,
                 "account_currency": expense_account_currency,
-                "exchange_rate": 1,
-                "debit": flt(self.amount) * exchange_rate if exchange_rate else flt(self.amount)
+                "exchange_rate": expense_exchange_rate,
+                "debit": company_amount
             })
         else:
             je.append("accounts", {
@@ -799,6 +828,6 @@ def get_exchange_rate(from_currency, to_currency, date=None):
     )
 
     if reverse_rate and flt(reverse_rate) > 0:
-        return flt(1 / flt(reverse_rate), 4)
+        return flt(1 / flt(reverse_rate), 9)
 
     return 0
