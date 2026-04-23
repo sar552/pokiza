@@ -14,6 +14,46 @@ function isCashUsdModeOfPayment(modeOfPayment) {
     return MODE_OF_PAYMENT_CASH_USD_NAMES.includes(modeOfPayment);
 }
 
+function isUzsModeOfPayment(modeOfPayment) {
+    return isCashUzsModeOfPayment(modeOfPayment) || modeOfPayment === MODE_OF_PAYMENT_BANK;
+}
+
+function isUsdModeOfPayment(modeOfPayment) {
+    return isCashUsdModeOfPayment(modeOfPayment);
+}
+
+function getUzsModeOfPaymentNames() {
+    return MODE_OF_PAYMENT_CASH_UZS_NAMES.concat([MODE_OF_PAYMENT_BANK]);
+}
+
+function getConversionModeOfPaymentNames() {
+    return getUzsModeOfPaymentNames().concat(MODE_OF_PAYMENT_CASH_USD_NAMES);
+}
+
+function getConversionTargetModeOfPaymentNames(modeOfPayment) {
+    if (isUzsModeOfPayment(modeOfPayment)) {
+        return MODE_OF_PAYMENT_CASH_USD_NAMES;
+    }
+
+    if (isUsdModeOfPayment(modeOfPayment)) {
+        return getUzsModeOfPaymentNames();
+    }
+
+    return getConversionModeOfPaymentNames();
+}
+
+function getTransferTargetModeOfPaymentNames(modeOfPayment) {
+    if (isUzsModeOfPayment(modeOfPayment)) {
+        return getUzsModeOfPaymentNames();
+    }
+
+    if (isUsdModeOfPayment(modeOfPayment)) {
+        return MODE_OF_PAYMENT_CASH_USD_NAMES;
+    }
+
+    return getConversionModeOfPaymentNames();
+}
+
 frappe.ui.form.on("Kassa", {
     refresh: function(frm) {
         frm._cash_account_to_currency = frm._cash_account_to_currency || "";
@@ -112,6 +152,14 @@ frappe.ui.form.on("Kassa", {
             frm.set_value("cash_account_to", "");
             frm.set_value("balance_to", 0);
             frm.trigger("set_mode_of_payment_to_query");
+
+            if (frm.doc.transaction_type === "Конвертация") {
+                if (!isUzsModeOfPayment(frm.doc.mode_of_payment) && !isUsdModeOfPayment(frm.doc.mode_of_payment)) {
+                    frappe.msgprint(__("Для конвертации выберите UZS или USD способ оплаты."));
+                    frm.set_value("mode_of_payment", "");
+                    return;
+                }
+            }
         }
     },
 
@@ -245,10 +293,16 @@ frappe.ui.form.on("Kassa", {
 
     set_mode_of_payment_query: function(frm) {
         frm.set_query("mode_of_payment", function() {
+            let filters = {
+                enabled: 1
+            };
+
+            if (frm.doc.transaction_type === "Конвертация") {
+                filters.name = ["in", getConversionModeOfPaymentNames()];
+            }
+
             return {
-                filters: {
-                    enabled: 1
-                }
+                filters: filters
             };
         });
     },
@@ -259,7 +313,13 @@ frappe.ui.form.on("Kassa", {
                 enabled: 1
             };
 
-            if (frm.doc.mode_of_payment) {
+            if (frm.doc.transaction_type === "Конвертация") {
+                filters.name = ["in", getConversionTargetModeOfPaymentNames(frm.doc.mode_of_payment)];
+            } else if (frm.doc.transaction_type === "Перемещения" && frm.doc.mode_of_payment) {
+                filters.name = ["in", getTransferTargetModeOfPaymentNames(frm.doc.mode_of_payment).filter(
+                    modeOfPayment => modeOfPayment !== frm.doc.mode_of_payment
+                )];
+            } else if (frm.doc.mode_of_payment) {
                 filters.name = ["!=", frm.doc.mode_of_payment];
             }
 
@@ -333,6 +393,16 @@ frappe.ui.form.on("Kassa", {
     },
 
     credit_amount: function(frm) {
+        if (frm.doc.transaction_type === "Конвертация") {
+            if (frm._setting_credit_amount_from_script) {
+                return;
+            }
+
+            set_derived_value(frm, "manual_credit_amount", flt(frm.doc.credit_amount) > 0 ? 1 : 0);
+            frm.trigger("render_currency_info");
+            return;
+        }
+
         if (!isPartyMulticurrencyPayment(frm)) {
             return;
         }
@@ -383,7 +453,7 @@ frappe.ui.form.on("Kassa", {
         frm.set_df_property("debit_amount", "hidden", showConversion ? 0 : 1);
         frm.set_df_property("credit_amount", "hidden", showBlock ? 0 : 1);
         frm.set_df_property("debit_amount", "read_only", showPartyExchange ? 1 : 0);
-        frm.set_df_property("credit_amount", "read_only", showConversion ? 1 : 0);
+        frm.set_df_property("credit_amount", "read_only", 0);
 
         if (showPartyExchange) {
             frm.set_df_property("section_break_conversion", "label", "Мультивалютный платеж");
@@ -413,6 +483,7 @@ frappe.ui.form.on("Kassa", {
     calculate_exchange_amounts: function(frm) {
         if (frm.doc.transaction_type === "Конвертация") {
             if (!frm.doc.debit_amount || !frm.doc.exchange_rate) return;
+            if (cint(frm.doc.manual_credit_amount)) return;
 
             const targetCurrency = getTargetCurrency(frm);
             const precision = targetCurrency === "UZS" ? 0 : 2;

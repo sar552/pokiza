@@ -27,6 +27,14 @@ def is_cash_usd_mode_of_payment(mode_of_payment):
     return mode_of_payment in MODE_OF_PAYMENT_CASH_USD_NAMES
 
 
+def is_uzs_conversion_mode_of_payment(mode_of_payment):
+    return is_cash_uzs_mode_of_payment(mode_of_payment) or mode_of_payment == MODE_OF_PAYMENT_BANK
+
+
+def is_usd_conversion_mode_of_payment(mode_of_payment):
+    return is_cash_usd_mode_of_payment(mode_of_payment)
+
+
 def is_dividend_party_type(party_type):
     return party_type in DIVIDEND_ACCOUNT_NUMBERS
 
@@ -562,6 +570,14 @@ class Kassa(Document):
         if self.transaction_type == "Конвертация":
             if not self.mode_of_payment_to:
                 frappe.throw(_("Пожалуйста, выберите способ оплаты (куда)"))
+
+            source_is_uzs = is_uzs_conversion_mode_of_payment(self.mode_of_payment)
+            source_is_usd = is_usd_conversion_mode_of_payment(self.mode_of_payment)
+            target_is_uzs = is_uzs_conversion_mode_of_payment(self.mode_of_payment_to)
+            target_is_usd = is_usd_conversion_mode_of_payment(self.mode_of_payment_to)
+
+            if not ((source_is_uzs and target_is_usd) or (source_is_usd and target_is_uzs)):
+                frappe.throw(_("Для конвертации выберите пару UZS ↔ USD"))
 
             if not self.exchange_rate or flt(self.exchange_rate) <= 0:
                 frappe.throw(_("Пожалуйста, укажите курс обмена"))

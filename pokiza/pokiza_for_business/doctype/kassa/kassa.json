@@ -112,6 +112,7 @@
    "fieldname": "mode_of_payment_to",
    "fieldtype": "Link",
    "label": "Способ оплаты (куда)",
+   "mandatory_depends_on": "eval:in_list(['Перемещения', 'Конвертация'], doc.transaction_type)",
    "options": "Mode of Payment"
   },
   {

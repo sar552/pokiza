@@ -205,6 +205,54 @@ class UnitTestKassa(FrappeTestCase):
         with self.assertRaises(frappe.ValidationError):
             doc.validate_conversion()
 
+    @patch("pokiza.pokiza_for_business.doctype.kassa.kassa.frappe.get_cached_value")
+    def test_validate_conversion_allows_uzs_modes_with_usd(self, mocked_get_cached_value):
+        mocked_get_cached_value.side_effect = lambda doctype, name, fieldname: {
+            ("Account", "1112 - Наличные USD - P", "account_currency"): "USD",
+            ("Account", "1110 - Наличные UZB - P", "account_currency"): "UZS",
+            ("Account", "1111 - Р/С UZB - P", "account_currency"): "UZS",
+        }.get((doctype, name, fieldname))
+
+        valid_doc = make_kassa_doc(
+            transaction_type="Конвертация",
+            mode_of_payment="Наличый USD",
+            cash_account="1112 - Наличные USD - P",
+            mode_of_payment_to="Наличый UZS",
+            cash_account_to="1110 - Наличные UZB - P",
+            debit_amount=100,
+            credit_amount=1219000,
+            party_type="",
+            party=None,
+        )
+        valid_doc.validate_conversion()
+
+        bank_doc = make_kassa_doc(
+            transaction_type="Конвертация",
+            mode_of_payment="Наличый USD",
+            cash_account="1112 - Наличные USD - P",
+            mode_of_payment_to="Р/С",
+            cash_account_to="1111 - Р/С UZB - P",
+            debit_amount=100,
+            credit_amount=1219000,
+            party_type="",
+            party=None,
+        )
+        bank_doc.validate_conversion()
+
+        invalid_doc = make_kassa_doc(
+            transaction_type="Конвертация",
+            mode_of_payment="Наличый UZS",
+            cash_account="1110 - Наличные UZB - P",
+            mode_of_payment_to="Р/С",
+            cash_account_to="1111 - Р/С UZB - P",
+            debit_amount=100,
+            credit_amount=100,
+            party_type="",
+            party=None,
+        )
+        with self.assertRaises(frappe.ValidationError):
+            invalid_doc.validate_conversion()
+
     @patch("pokiza.pokiza_for_business.doctype.kassa.kassa.get_exchange_rate", return_value=12200)
     def test_set_payment_exchange_details_auto_calculates_credit_amount(self, _mocked_rate):
         doc = make_kassa_doc(credit_amount=0, manual_credit_amount=0, amount=183)
