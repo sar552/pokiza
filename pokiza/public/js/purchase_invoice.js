@@ -1,4 +1,4 @@
-const PURCHASE_RAW_ITEM_GROUP = "Сырё";
+const PURCHASE_ITEM_GROUPS = ["Сырё", "Упаковка"];
 
 frappe.ui.form.on("Purchase Invoice", {
     setup(frm) {
@@ -16,7 +16,7 @@ function setPurchaseItemQuery(frm) {
             filters: {
                 disabled: 0,
                 is_purchase_item: 1,
-                item_group: PURCHASE_RAW_ITEM_GROUP,
+                item_group: ["in", PURCHASE_ITEM_GROUPS],
             },
         };
     });
