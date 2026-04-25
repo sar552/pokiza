@@ -55,8 +55,13 @@ function getTransferTargetModeOfPaymentNames(modeOfPayment) {
 }
 
 frappe.ui.form.on("Kassa", {
+    onload: function(frm) {
+        frm.trigger("clear_copied_linked_document");
+    },
+
     refresh: function(frm) {
         frm._cash_account_to_currency = frm._cash_account_to_currency || "";
+        frm.trigger("clear_copied_linked_document");
 
         // Set expense account query
         frm.set_query("expense_account", function() {
@@ -94,7 +99,24 @@ frappe.ui.form.on("Kassa", {
         frm.trigger("update_exchange_fields");
         frm.trigger("render_currency_info");
 
-	    },
+    },
+
+    before_save: function(frm) {
+        frm.trigger("clear_copied_linked_document");
+    },
+
+    clear_copied_linked_document: function(frm) {
+        if (!frm.is_new()) {
+            return;
+        }
+
+        if (frm.doc.linked_doctype || frm.doc.linked_entry) {
+            frm.doc.linked_doctype = "";
+            frm.doc.linked_entry = "";
+            frm.refresh_field("linked_doctype");
+            frm.refresh_field("linked_entry");
+        }
+    },
 
     company: function(frm) {
         frm._cash_account_to_currency = "";
