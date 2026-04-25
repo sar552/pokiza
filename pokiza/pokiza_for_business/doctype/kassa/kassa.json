@@ -302,12 +302,14 @@
    "fieldname": "linked_doctype",
    "fieldtype": "Data",
    "label": "Тип документа",
+   "no_copy": 1,
    "read_only": 1
   },
   {
    "fieldname": "linked_entry",
    "fieldtype": "Dynamic Link",
    "label": "Связанный документ",
+   "no_copy": 1,
    "options": "linked_doctype",
    "read_only": 1
   },
