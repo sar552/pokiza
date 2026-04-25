@@ -67,12 +67,13 @@ def get_data(filters):
 
     party_currency = party_currency[0][0] if party_currency else 'UZS'
 
-    # Boshlang'ich qoldiq (до from_date) - party valyutasida, cancelled'siz
-    # Formula: PI - SI + PE receive - PE pay + JE credit - JE debit + Opening credit - Opening debit + Salary
+    # Boshlang'ich qoldiq (до from_date) - party valyutasida, cancelled'siz.
+    # Invoice returnlari GL'da teskari tomonga tushadi, shuning uchun invoice'lar net hisoblanadi.
+    # Formula: PI net - SI net + PE receive - PE pay + JE credit - JE debit + Opening credit - Opening debit + Salary
 
-    # Purchase Invoice (PI) - credit (bizning qarzimiz oshadi)
+    # Purchase Invoice (PI) - credit qarzni oshiradi, debit return qarzni kamaytiradi
     opening_pi = frappe.db.sql("""
-        SELECT IFNULL(SUM(credit_in_account_currency), 0)
+        SELECT IFNULL(SUM(credit_in_account_currency - debit_in_account_currency), 0)
         FROM `tabGL Entry`
         WHERE posting_date < %s
           AND party_type = %s
@@ -82,9 +83,9 @@ def get_data(filters):
           AND is_cancelled = 0
     """, (from_date, party_type, party, party_currency))[0][0]
 
-    # Sales Invoice (SI) - debit (ular bizga qarzdor)
+    # Sales Invoice (SI) - debit ular qarzini oshiradi, credit return qarzni kamaytiradi
     opening_si = frappe.db.sql("""
-        SELECT IFNULL(SUM(debit_in_account_currency), 0)
+        SELECT IFNULL(SUM(debit_in_account_currency - credit_in_account_currency), 0)
         FROM `tabGL Entry`
         WHERE posting_date < %s
           AND party_type = %s
