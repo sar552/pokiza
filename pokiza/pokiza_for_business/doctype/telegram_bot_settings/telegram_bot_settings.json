@@ -1,0 +1,78 @@
+{
+ "actions": [
+  {
+   "action": "pokiza.pokiza.pokiza_for_business.doctype.telegram_bot_settings.telegram_bot_settings.set_webhook",
+   "label": "Webhook o'rnatish"
+  },
+  {
+   "action": "pokiza.pokiza.pokiza_for_business.doctype.telegram_bot_settings.telegram_bot_settings.delete_webhook",
+   "label": "Webhook o'chirish"
+  }
+ ],
+ "allow_rename": 0,
+ "creation": "2026-04-22 00:00:00.000000",
+ "doctype": "DocType",
+ "document_type": "Document",
+ "engine": "InnoDB",
+ "field_order": [
+  "bot_token",
+  "is_active",
+  "webhook_url",
+  "section_break_admins",
+  "admins"
+ ],
+ "fields": [
+  {
+   "fieldname": "bot_token",
+   "fieldtype": "Password",
+   "label": "Bot Token",
+   "reqd": 1
+  },
+  {
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Bot faol",
+   "default": "1"
+  },
+  {
+   "fieldname": "webhook_url",
+   "fieldtype": "Data",
+   "label": "Webhook URL",
+   "description": "Masalan: https://your-site.com/api/method/pokiza.pokiza.api.telegram_webhook.handle"
+  },
+  {
+   "fieldname": "section_break_admins",
+   "fieldtype": "Section Break",
+   "label": "Adminlar"
+  },
+  {
+   "fieldname": "admins",
+   "fieldtype": "Table",
+   "label": "Admin ro'yxati",
+   "options": "Telegram Admin"
+  }
+ ],
+ "issingle": 1,
+ "modified": "2026-04-22 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Pokiza for business",
+ "name": "Telegram Bot Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "track_changes": 0
+}
