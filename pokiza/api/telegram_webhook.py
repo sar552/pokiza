@@ -43,6 +43,36 @@ _STATE_PREFIX = "pokiza_tg_state:"
 _STATE_TTL = 300  # 5 daqiqa
 
 
+# ─── Setup endpoint (bir marta ishlatiladi) ───────────────────────────────────
+
+@frappe.whitelist(allow_guest=True)
+def run_setup():
+    """Custom fieldlarni yaratish — faqat bir marta chaqiriladi."""
+    from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+    fields = {
+        "Customer": [
+            {"fieldname": "contact_number", "label": "Telefon raqam", "fieldtype": "Data",
+             "options": "Phone", "insert_after": "customer_name", "in_standard_filter": 1},
+            {"fieldname": "telegram_chat_id", "label": "Telegram Chat ID", "fieldtype": "Data",
+             "insert_after": "contact_number", "read_only": 1},
+        ],
+        "Supplier": [
+            {"fieldname": "contact_number", "label": "Telefon raqam", "fieldtype": "Data",
+             "options": "Phone", "insert_after": "supplier_name", "in_standard_filter": 1},
+            {"fieldname": "telegram_chat_id", "label": "Telegram Chat ID", "fieldtype": "Data",
+             "insert_after": "contact_number", "read_only": 1},
+        ],
+        "Employee": [
+            {"fieldname": "telegram_chat_id", "label": "Telegram Chat ID", "fieldtype": "Data",
+             "insert_after": "employee_name", "read_only": 1},
+        ],
+    }
+    create_custom_fields(fields, ignore_validate=True, update=True)
+    frappe.db.commit()
+    return {"ok": True, "message": "Custom fields yaratildi"}
+
+
 # ─── Webhook entry point ──────────────────────────────────────────────────────
 
 @frappe.whitelist(allow_guest=True)
