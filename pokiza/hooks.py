@@ -142,13 +142,11 @@ after_install = "pokiza.setup.after_install"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"Kassa": {
+		"on_submit": "pokiza.events.kassa.on_submit",
+	},
+}
 
 # Scheduled Tasks
 # ---------------
