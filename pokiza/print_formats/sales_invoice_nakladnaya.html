@@ -1,0 +1,334 @@
+{% set customer_phone = doc.contact_mobile or doc.contact_phone or doc.get("contact_number") or "" %}
+{% set customer_city = "" %}
+{% if doc.customer_address %}
+	{% set customer_city = frappe.db.get_value("Address", doc.customer_address, "city") or "" %}
+{% endif %}
+{% set discount_percent = doc.additional_discount_percentage or 0 %}
+{% set discount_amount = doc.discount_amount or 0 %}
+{% set bonus_amount = doc.get("custom_bonus") or doc.get("bonus") or 0 %}
+{% set total_amount = doc.rounded_total or doc.grand_total or doc.total or 0 %}
+{% set row_count = 28 %}
+
+{% macro money(value) -%}
+	{{ "{:,.0f}".format((value or 0)|float) }} сўм
+{%- endmacro %}
+
+{% macro qty(value) -%}
+	{{ "{:,.3f}".format((value or 0)|float).rstrip("0").rstrip(".") }}
+{%- endmacro %}
+
+<style>
+	@page {
+		size: Letter portrait;
+		margin: 11mm 13mm;
+	}
+
+	.print-format {
+		padding: 0 !important;
+		color: #111827;
+		font-family: Calibri, Arial, sans-serif;
+		font-size: 12px;
+		line-height: 1.25;
+	}
+
+	.nakladnaya {
+		width: 100%;
+		max-width: 188mm;
+		margin: 0 auto;
+	}
+
+	.nakladnaya__top {
+		display: grid;
+		grid-template-columns: 1fr 270px;
+		column-gap: 28px;
+		align-items: start;
+		border-top: 1px solid #1f4e79;
+		border-left: 1px solid #1f4e79;
+		border-right: 1px solid #1f4e79;
+		padding-top: 8px;
+		min-height: 116px;
+	}
+
+	.nakladnaya__title {
+		margin: 0 0 34px;
+		text-align: center;
+		color: #006fbd;
+		font-size: 32px;
+		font-style: italic;
+		font-weight: 700;
+	}
+
+	.customer-card {
+		width: 72%;
+		margin-left: 0;
+	}
+
+	.customer-card__name,
+	.customer-card__meta {
+		border: 1px dashed #0ea5e9;
+		padding: 3px 8px;
+		min-height: 22px;
+		text-align: center;
+		font-size: 14px;
+	}
+
+	.customer-card__name {
+		background: #fff200;
+		font-weight: 500;
+	}
+
+	.customer-card__meta {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+	}
+
+	.nakladnaya__details {
+		padding-top: 10px;
+	}
+
+	.detail-row {
+		display: grid;
+		grid-template-columns: 118px 1fr;
+		align-items: center;
+		min-height: 28px;
+		font-size: 15px;
+	}
+
+	.detail-row__label {
+		text-align: right;
+		padding-right: 8px;
+	}
+
+	.detail-row__value {
+		border: 1px solid #111827;
+		padding: 6px 10px;
+		min-height: 28px;
+	}
+
+	.detail-row__value--accent {
+		background: #fff200;
+		font-size: 16px;
+	}
+
+	.detail-row--plain .detail-row__value {
+		border: 0;
+		padding-top: 2px;
+	}
+
+	.items-table {
+		width: 100%;
+		border-collapse: collapse;
+		table-layout: fixed;
+	}
+
+	.items-table col.item-name {
+		width: 41%;
+	}
+
+	.items-table col.item-description {
+		width: 9%;
+	}
+
+	.items-table col.item-qty {
+		width: 12%;
+	}
+
+	.items-table col.item-rate {
+		width: 14%;
+	}
+
+	.items-table col.item-amount {
+		width: 24%;
+	}
+
+	.items-table th {
+		background: #dce6f1;
+		border: 1px solid #1f4e79;
+		padding: 5px 4px;
+		text-align: center;
+		font-size: 15px;
+		font-weight: 700;
+	}
+
+	.items-table td {
+		height: 21px;
+		border: 1px dashed #0ea5e9;
+		padding: 3px 6px;
+		vertical-align: middle;
+		font-size: 13px;
+	}
+
+	.items-table .number {
+		text-align: right;
+		white-space: nowrap;
+	}
+
+	.items-table .center {
+		text-align: center;
+		white-space: nowrap;
+	}
+
+	.items-table .item-name-cell {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.nakladnaya__bottom {
+		display: grid;
+		grid-template-columns: 1fr 330px;
+		align-items: end;
+	}
+
+	.thanks {
+		min-height: 86px;
+		border-left: 1px solid #1f4e79;
+		border-bottom: 1px solid #1f4e79;
+		padding: 12px 8px;
+		font-size: 16px;
+		font-style: italic;
+	}
+
+	.totals-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 14px;
+	}
+
+	.totals-table td {
+		border-top: 1px solid #1f4e79;
+		border-bottom: 1px solid #1f4e79;
+		padding: 5px 7px;
+	}
+
+	.totals-table .label {
+		width: 46%;
+		text-align: right;
+		font-weight: 500;
+	}
+
+	.totals-table .value {
+		text-align: right;
+		white-space: nowrap;
+	}
+
+	.totals-table .grand td {
+		font-size: 15px;
+		font-weight: 700;
+	}
+
+	.signature-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 28px;
+		margin-top: 20px;
+		font-size: 13px;
+	}
+
+	.signature-line {
+		border-top: 1px solid #1f2937;
+		padding-top: 5px;
+		color: #374151;
+		text-align: center;
+	}
+</style>
+
+<div class="nakladnaya">
+	<div class="nakladnaya__top">
+		<div>
+			<h1 class="nakladnaya__title">Накладная:</h1>
+			<div class="customer-card">
+				<div class="customer-card__name">{{ doc.customer_name or doc.customer }}</div>
+				<div class="customer-card__meta">
+					<div>{{ customer_phone }}</div>
+					<div>{{ customer_city }}</div>
+				</div>
+				<div class="customer-card__meta">
+					<div>&nbsp;</div>
+					<div>&nbsp;</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="nakladnaya__details">
+			<div class="detail-row">
+				<div class="detail-row__label">Накладная:</div>
+				<div class="detail-row__value detail-row__value--accent">{{ doc.name }}</div>
+			</div>
+			<div class="detail-row detail-row--plain">
+				<div class="detail-row__label">Дата:</div>
+				<div class="detail-row__value">{{ doc.get_formatted("posting_date") }}</div>
+			</div>
+		</div>
+	</div>
+
+	<table class="items-table">
+		<colgroup>
+			<col class="item-name">
+			<col class="item-description">
+			<col class="item-qty">
+			<col class="item-rate">
+			<col class="item-amount">
+		</colgroup>
+		<thead>
+			<tr>
+				<th>Предметы</th>
+				<th>Описание</th>
+				<th>Кол-во</th>
+				<th>Цена</th>
+				<th>Всего</th>
+			</tr>
+		</thead>
+		<tbody>
+			{% for item in doc.items %}
+				<tr>
+					<td class="item-name-cell">{{ item.item_name or item.item_code }}</td>
+					<td class="center">Накладная</td>
+					<td class="center">{{ qty(item.qty) }}</td>
+					<td class="number">{{ "{:,.0f}".format((item.rate or item.net_rate or 0)|float) }}</td>
+					<td class="number">{{ money(item.amount or item.net_amount) }}</td>
+				</tr>
+			{% endfor %}
+			{% for i in range(row_count - (doc.items|length)) %}
+				<tr>
+					<td>&nbsp;</td>
+					<td>&nbsp;</td>
+					<td>&nbsp;</td>
+					<td>&nbsp;</td>
+					<td>&nbsp;</td>
+				</tr>
+			{% endfor %}
+		</tbody>
+	</table>
+
+	<div class="nakladnaya__bottom">
+		<div class="thanks">Спасибо за покупку</div>
+		<table class="totals-table">
+			<tr>
+				<td class="label">Итого:</td>
+				<td class="value">{{ money(doc.total or doc.net_total or total_amount) }}</td>
+			</tr>
+			<tr>
+				<td class="label">Скидка:</td>
+				<td class="value">{{ "{:,.2f}".format((discount_percent or 0)|float).rstrip("0").rstrip(".") }}%</td>
+			</tr>
+			<tr>
+				<td class="label">Сумма скидки:</td>
+				<td class="value">{{ money(discount_amount) }}</td>
+			</tr>
+			<tr>
+				<td class="label">Бонус:</td>
+				<td class="value">{% if bonus_amount %}{{ money(bonus_amount) }}{% endif %}</td>
+			</tr>
+			<tr class="grand">
+				<td class="label">Всего:</td>
+				<td class="value">{{ money(total_amount) }}</td>
+			</tr>
+		</table>
+	</div>
+
+	<div class="signature-row">
+		<div class="signature-line">Отпустил</div>
+		<div class="signature-line">Получил</div>
+	</div>
+</div>
