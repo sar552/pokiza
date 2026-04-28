@@ -143,6 +143,7 @@ jobs:
           export SITE_NAME="${{ secrets.SITE_NAME }}"
           export BENCH_PATH="${{ env.BENCH_PATH }}"
           export APP_NAME="\$(basename "${{ github.repository }}")"
+          export REPOSITORY_URL="https://github.com/${{ github.repository }}.git"
           
           set -e
           cd \${BENCH_PATH}
@@ -153,10 +154,16 @@ jobs:
           
           # Detect remote name (origin or upstream)
           REMOTE_NAME=\$(git remote | head -1)
-          echo "🔗 Using remote: \${REMOTE_NAME}"
+          if [ -z "\${REMOTE_NAME}" ]; then
+            REMOTE_NAME="upstream"
+            git remote add \${REMOTE_NAME} "\${REPOSITORY_URL}"
+          else
+            git remote set-url \${REMOTE_NAME} "\${REPOSITORY_URL}"
+          fi
+          echo "🔗 Using remote: \${REMOTE_NAME} -> \${REPOSITORY_URL}"
           
           # Pull latest changes
-          git fetch \${REMOTE_NAME}
+          git fetch --prune \${REMOTE_NAME}
           git reset --hard \${REMOTE_NAME}/${{ github.ref_name }}
           
           echo "✅ Code updated to latest commit:"

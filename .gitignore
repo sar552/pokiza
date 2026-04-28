@@ -5,3 +5,10 @@
 tags
 node_modules
 __pycache__
+
+# Local environment and secrets
+.env
+.env.*
+*.env
+site_config.json
+common_site_config.json
