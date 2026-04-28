@@ -7,10 +7,15 @@
 {% set discount_amount = doc.discount_amount or 0 %}
 {% set bonus_amount = doc.get("custom_bonus") or doc.get("bonus") or 0 %}
 {% set total_amount = doc.rounded_total or doc.grand_total or doc.total or 0 %}
-{% set row_count = 28 %}
+{% set minimum_rows = 12 %}
+{% set empty_rows = minimum_rows - (doc.items|length) %}
 
 {% macro money(value) -%}
 	{{ "{:,.0f}".format((value or 0)|float) }} сўм
+{%- endmacro %}
+
+{% macro number(value) -%}
+	{{ "{:,.0f}".format((value or 0)|float) }}
 {%- endmacro %}
 
 {% macro qty(value) -%}
@@ -20,15 +25,15 @@
 <style>
 	@page {
 		size: Letter portrait;
-		margin: 11mm 13mm;
+		margin: 12mm;
 	}
 
 	.print-format {
 		padding: 0 !important;
-		color: #111827;
+		color: #172033;
 		font-family: Calibri, Arial, sans-serif;
 		font-size: 12px;
-		line-height: 1.25;
+		line-height: 1.35;
 	}
 
 	.nakladnaya {
@@ -37,125 +42,155 @@
 		margin: 0 auto;
 	}
 
-	.nakladnaya__top {
-		display: grid;
-		grid-template-columns: 1fr 270px;
-		column-gap: 28px;
-		align-items: start;
-		border-top: 1px solid #1f4e79;
-		border-left: 1px solid #1f4e79;
-		border-right: 1px solid #1f4e79;
-		padding-top: 8px;
-		min-height: 116px;
-	}
-
-	.nakladnaya__title {
-		margin: 0 0 34px;
-		text-align: center;
-		color: #006fbd;
-		font-size: 32px;
-		font-style: italic;
-		font-weight: 700;
-	}
-
-	.customer-card {
-		width: 72%;
-		margin-left: 0;
-	}
-
-	.customer-card__name,
-	.customer-card__meta {
-		border: 1px dashed #0ea5e9;
-		padding: 3px 8px;
-		min-height: 22px;
-		text-align: center;
-		font-size: 14px;
-	}
-
-	.customer-card__name {
-		background: #fff200;
-		font-weight: 500;
-	}
-
-	.customer-card__meta {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-	}
-
-	.nakladnaya__details {
-		padding-top: 10px;
-	}
-
-	.detail-row {
-		display: grid;
-		grid-template-columns: 118px 1fr;
-		align-items: center;
-		min-height: 28px;
-		font-size: 15px;
-	}
-
-	.detail-row__label {
-		text-align: right;
-		padding-right: 8px;
-	}
-
-	.detail-row__value {
-		border: 1px solid #111827;
-		padding: 6px 10px;
-		min-height: 28px;
-	}
-
-	.detail-row__value--accent {
-		background: #fff200;
-		font-size: 16px;
-	}
-
-	.detail-row--plain .detail-row__value {
-		border: 0;
-		padding-top: 2px;
-	}
-
-	.items-table {
+	.header-table,
+	.customer-table,
+	.items-table,
+	.footer-table,
+	.sign-table {
 		width: 100%;
 		border-collapse: collapse;
 		table-layout: fixed;
 	}
 
-	.items-table col.item-name {
-		width: 41%;
+	.header-table {
+		margin-bottom: 10px;
+		border-bottom: 3px solid #1f4e79;
 	}
 
-	.items-table col.item-description {
-		width: 9%;
+	.title-cell {
+		width: 60%;
+		padding: 0 0 10px;
+		vertical-align: bottom;
 	}
 
-	.items-table col.item-qty {
+	.doc-title {
+		margin: 0;
+		color: #0b67b2;
+		font-size: 31px;
+		font-weight: 700;
+		font-style: italic;
+		letter-spacing: 0;
+	}
+
+	.company-note {
+		margin-top: 3px;
+		color: #64748b;
+		font-size: 11px;
+	}
+
+	.meta-cell {
+		width: 40%;
+		padding: 0 0 10px;
+		vertical-align: bottom;
+	}
+
+	.meta-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 12px;
+	}
+
+	.meta-table td {
+		border: 1px solid #cbd5e1;
+		padding: 6px 8px;
+	}
+
+	.meta-table .label {
+		width: 35%;
+		background: #f1f5f9;
+		color: #475569;
+		font-weight: 700;
+		text-align: right;
+	}
+
+	.meta-table .value {
+		font-weight: 700;
+		color: #0f172a;
+	}
+
+	.customer-table {
+		margin-bottom: 12px;
+		border: 1px solid #cbd5e1;
+	}
+
+	.customer-table td {
+		padding: 8px 10px;
+		border-right: 1px solid #e2e8f0;
+		vertical-align: top;
+	}
+
+	.customer-table td:last-child {
+		border-right: 0;
+	}
+
+	.info-label {
+		margin-bottom: 2px;
+		color: #64748b;
+		font-size: 10px;
+		font-weight: 700;
+		text-transform: uppercase;
+	}
+
+	.info-value {
+		min-height: 18px;
+		color: #111827;
+		font-size: 13px;
+		font-weight: 700;
+	}
+
+	.items-table {
+		border: 1px solid #1f4e79;
+	}
+
+	.items-table col.idx {
+		width: 5%;
+	}
+
+	.items-table col.item {
+		width: 43%;
+	}
+
+	.items-table col.description {
+		width: 16%;
+	}
+
+	.items-table col.qty {
+		width: 10%;
+	}
+
+	.items-table col.rate {
 		width: 12%;
 	}
 
-	.items-table col.item-rate {
+	.items-table col.amount {
 		width: 14%;
 	}
 
-	.items-table col.item-amount {
-		width: 24%;
-	}
-
 	.items-table th {
-		background: #dce6f1;
+		padding: 7px 6px;
 		border: 1px solid #1f4e79;
-		padding: 5px 4px;
+		background: #eaf1f8;
+		color: #1e3a5f;
 		text-align: center;
-		font-size: 15px;
+		font-size: 12px;
 		font-weight: 700;
 	}
 
 	.items-table td {
-		height: 21px;
-		border: 1px dashed #0ea5e9;
-		padding: 3px 6px;
+		height: 24px;
+		padding: 5px 7px;
+		border: 1px solid #d7e0ea;
 		vertical-align: middle;
-		font-size: 13px;
+		font-size: 12px;
+	}
+
+	.items-table tbody tr:nth-child(even) td {
+		background: #fbfdff;
+	}
+
+	.items-table .idx-cell,
+	.items-table .center {
+		text-align: center;
 	}
 
 	.items-table .number {
@@ -163,172 +198,227 @@
 		white-space: nowrap;
 	}
 
-	.items-table .center {
-		text-align: center;
-		white-space: nowrap;
+	.item-name {
+		font-weight: 700;
 	}
 
-	.items-table .item-name-cell {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+	.item-code {
+		margin-top: 1px;
+		color: #64748b;
+		font-size: 10px;
 	}
 
-	.nakladnaya__bottom {
-		display: grid;
-		grid-template-columns: 1fr 330px;
-		align-items: end;
+	.footer-table {
+		margin-top: 12px;
 	}
 
-	.thanks {
-		min-height: 86px;
-		border-left: 1px solid #1f4e79;
-		border-bottom: 1px solid #1f4e79;
-		padding: 12px 8px;
-		font-size: 16px;
+	.footer-left {
+		width: 56%;
+		padding-right: 16px;
+		vertical-align: top;
+	}
+
+	.thanks-box {
+		min-height: 76px;
+		border: 1px solid #cbd5e1;
+		padding: 12px;
+		color: #172033;
+		font-size: 15px;
 		font-style: italic;
+	}
+
+	.footer-right {
+		width: 44%;
+		vertical-align: top;
 	}
 
 	.totals-table {
 		width: 100%;
 		border-collapse: collapse;
-		font-size: 14px;
+		border: 1px solid #1f4e79;
+		font-size: 12px;
 	}
 
 	.totals-table td {
-		border-top: 1px solid #1f4e79;
-		border-bottom: 1px solid #1f4e79;
-		padding: 5px 7px;
+		padding: 7px 9px;
+		border-bottom: 1px solid #d7e0ea;
+	}
+
+	.totals-table tr:last-child td {
+		border-bottom: 0;
 	}
 
 	.totals-table .label {
 		width: 46%;
+		background: #f8fafc;
+		color: #334155;
 		text-align: right;
-		font-weight: 500;
+		font-weight: 700;
 	}
 
 	.totals-table .value {
 		text-align: right;
 		white-space: nowrap;
-	}
-
-	.totals-table .grand td {
-		font-size: 15px;
 		font-weight: 700;
 	}
 
-	.signature-row {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 28px;
-		margin-top: 20px;
-		font-size: 13px;
+	.totals-table .grand .label,
+	.totals-table .grand .value {
+		background: #1f4e79;
+		color: #fff;
+		font-size: 14px;
 	}
 
-	.signature-line {
-		border-top: 1px solid #1f2937;
-		padding-top: 5px;
-		color: #374151;
+	.sign-table {
+		margin-top: 24px;
+	}
+
+	.sign-table td {
+		width: 50%;
+		padding: 0 16px;
 		text-align: center;
+		color: #334155;
+		font-size: 12px;
+	}
+
+	.sign-line {
+		border-top: 1px solid #334155;
+		padding-top: 5px;
 	}
 </style>
 
 <div class="nakladnaya">
-	<div class="nakladnaya__top">
-		<div>
-			<h1 class="nakladnaya__title">Накладная:</h1>
-			<div class="customer-card">
-				<div class="customer-card__name">{{ doc.customer_name or doc.customer }}</div>
-				<div class="customer-card__meta">
-					<div>{{ customer_phone }}</div>
-					<div>{{ customer_city }}</div>
-				</div>
-				<div class="customer-card__meta">
-					<div>&nbsp;</div>
-					<div>&nbsp;</div>
-				</div>
-			</div>
-		</div>
+	<table class="header-table">
+		<tr>
+			<td class="title-cell">
+				<h1 class="doc-title">Накладная</h1>
+				<div class="company-note">{{ doc.company }}</div>
+			</td>
+			<td class="meta-cell">
+				<table class="meta-table">
+					<tr>
+						<td class="label">Номер</td>
+						<td class="value">{{ doc.name }}</td>
+					</tr>
+					<tr>
+						<td class="label">Дата</td>
+						<td class="value">{{ doc.get_formatted("posting_date") }}</td>
+					</tr>
+				</table>
+			</td>
+		</tr>
+	</table>
 
-		<div class="nakladnaya__details">
-			<div class="detail-row">
-				<div class="detail-row__label">Накладная:</div>
-				<div class="detail-row__value detail-row__value--accent">{{ doc.name }}</div>
-			</div>
-			<div class="detail-row detail-row--plain">
-				<div class="detail-row__label">Дата:</div>
-				<div class="detail-row__value">{{ doc.get_formatted("posting_date") }}</div>
-			</div>
-		</div>
-	</div>
+	<table class="customer-table">
+		<tr>
+			<td style="width: 46%;">
+				<div class="info-label">Покупатель</div>
+				<div class="info-value">{{ doc.customer_name or doc.customer }}</div>
+			</td>
+			<td style="width: 24%;">
+				<div class="info-label">Телефон</div>
+				<div class="info-value">{{ customer_phone or "&nbsp;" }}</div>
+			</td>
+			<td style="width: 30%;">
+				<div class="info-label">Адрес / город</div>
+				<div class="info-value">{{ customer_city or doc.territory or "&nbsp;" }}</div>
+			</td>
+		</tr>
+	</table>
 
 	<table class="items-table">
 		<colgroup>
-			<col class="item-name">
-			<col class="item-description">
-			<col class="item-qty">
-			<col class="item-rate">
-			<col class="item-amount">
+			<col class="idx">
+			<col class="item">
+			<col class="description">
+			<col class="qty">
+			<col class="rate">
+			<col class="amount">
 		</colgroup>
 		<thead>
 			<tr>
-				<th>Предметы</th>
+				<th>№</th>
+				<th>Товар</th>
 				<th>Описание</th>
 				<th>Кол-во</th>
 				<th>Цена</th>
-				<th>Всего</th>
+				<th>Сумма</th>
 			</tr>
 		</thead>
 		<tbody>
 			{% for item in doc.items %}
+				{% set clean_description = (item.description or "") | striptags %}
 				<tr>
-					<td class="item-name-cell">{{ item.item_name or item.item_code }}</td>
-					<td class="center">Накладная</td>
+					<td class="idx-cell">{{ loop.index }}</td>
+					<td>
+						<div class="item-name">{{ item.item_name or item.item_code }}</div>
+						{% if item.item_code and item.item_code != item.item_name %}
+							<div class="item-code">{{ item.item_code }}</div>
+						{% endif %}
+					</td>
+					<td class="center">
+						{% if clean_description and clean_description != item.item_name and clean_description != item.item_code %}
+							{{ clean_description }}
+						{% else %}
+							Накладная
+						{% endif %}
+					</td>
 					<td class="center">{{ qty(item.qty) }}</td>
-					<td class="number">{{ "{:,.0f}".format((item.rate or item.net_rate or 0)|float) }}</td>
+					<td class="number">{{ number(item.rate or item.net_rate) }}</td>
 					<td class="number">{{ money(item.amount or item.net_amount) }}</td>
 				</tr>
 			{% endfor %}
-			{% for i in range(row_count - (doc.items|length)) %}
-				<tr>
-					<td>&nbsp;</td>
-					<td>&nbsp;</td>
-					<td>&nbsp;</td>
-					<td>&nbsp;</td>
-					<td>&nbsp;</td>
-				</tr>
-			{% endfor %}
+			{% if empty_rows > 0 %}
+				{% for i in range(empty_rows) %}
+					<tr>
+						<td>&nbsp;</td>
+						<td>&nbsp;</td>
+						<td>&nbsp;</td>
+						<td>&nbsp;</td>
+						<td>&nbsp;</td>
+						<td>&nbsp;</td>
+					</tr>
+				{% endfor %}
+			{% endif %}
 		</tbody>
 	</table>
 
-	<div class="nakladnaya__bottom">
-		<div class="thanks">Спасибо за покупку</div>
-		<table class="totals-table">
-			<tr>
-				<td class="label">Итого:</td>
-				<td class="value">{{ money(doc.total or doc.net_total or total_amount) }}</td>
-			</tr>
-			<tr>
-				<td class="label">Скидка:</td>
-				<td class="value">{{ "{:,.2f}".format((discount_percent or 0)|float).rstrip("0").rstrip(".") }}%</td>
-			</tr>
-			<tr>
-				<td class="label">Сумма скидки:</td>
-				<td class="value">{{ money(discount_amount) }}</td>
-			</tr>
-			<tr>
-				<td class="label">Бонус:</td>
-				<td class="value">{% if bonus_amount %}{{ money(bonus_amount) }}{% endif %}</td>
-			</tr>
-			<tr class="grand">
-				<td class="label">Всего:</td>
-				<td class="value">{{ money(total_amount) }}</td>
-			</tr>
-		</table>
-	</div>
+	<table class="footer-table">
+		<tr>
+			<td class="footer-left">
+				<div class="thanks-box">Спасибо за покупку</div>
+			</td>
+			<td class="footer-right">
+				<table class="totals-table">
+					<tr>
+						<td class="label">Итого</td>
+						<td class="value">{{ money(doc.total or doc.net_total or total_amount) }}</td>
+					</tr>
+					<tr>
+						<td class="label">Скидка</td>
+						<td class="value">{{ "{:,.2f}".format((discount_percent or 0)|float).rstrip("0").rstrip(".") }}%</td>
+					</tr>
+					<tr>
+						<td class="label">Сумма скидки</td>
+						<td class="value">{{ money(discount_amount) }}</td>
+					</tr>
+					<tr>
+						<td class="label">Бонус</td>
+						<td class="value">{% if bonus_amount %}{{ money(bonus_amount) }}{% else %}&nbsp;{% endif %}</td>
+					</tr>
+					<tr class="grand">
+						<td class="label">Всего</td>
+						<td class="value">{{ money(total_amount) }}</td>
+					</tr>
+				</table>
+			</td>
+		</tr>
+	</table>
 
-	<div class="signature-row">
-		<div class="signature-line">Отпустил</div>
-		<div class="signature-line">Получил</div>
-	</div>
+	<table class="sign-table">
+		<tr>
+			<td><div class="sign-line">Отпустил</div></td>
+			<td><div class="sign-line">Получил</div></td>
+		</tr>
+	</table>
 </div>
