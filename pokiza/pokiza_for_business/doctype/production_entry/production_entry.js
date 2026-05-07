@@ -6,6 +6,8 @@ const FINISHED_GOODS_ITEM_GROUP = "Готовый продукт";
 
 frappe.ui.form.on('Production Entry', {
     setup: function(frm) {
+        frm.ignore_doctypes_on_cancel_all = ["Stock Entry"];
+
         frm.set_query("item_to_manufacture", function() {
             return {
                 filters: {

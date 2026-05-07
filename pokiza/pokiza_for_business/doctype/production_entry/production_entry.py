@@ -27,6 +27,9 @@ class ProductionEntry(Document):
         self.db_set("status", "Cancelled")
         self.cancel_stock_entry()
 
+    def on_trash(self):
+        self.unlink_stock_entries_for_delete()
+
     def set_status(self, status=None):
         if status:
             self.status = status
@@ -120,12 +123,60 @@ class ProductionEntry(Document):
 
     def cancel_stock_entry(self):
         """Cancel linked Stock Entry"""
-        if self.stock_entry:
-            se = frappe.get_doc("Stock Entry", self.stock_entry)
+        stock_entries = self.get_linked_stock_entries(docstatus=1)
+
+        for se_name in stock_entries:
+            se = frappe.get_doc("Stock Entry", se_name)
             if se.docstatus == 1:
+                linked_production_entry = se.custom_production_entry
+                if linked_production_entry == self.name:
+                    se.db_set("custom_production_entry", None, update_modified=False)
+                    se.custom_production_entry = None
+
                 se.flags.ignore_permissions = True
-                se.cancel()
-                frappe.msgprint(_("Stock Entry {0} cancelled").format(self.stock_entry))
+                se.flags.ignore_links = True
+
+                try:
+                    se.cancel()
+                finally:
+                    if linked_production_entry:
+                        frappe.db.set_value(
+                            "Stock Entry",
+                            se_name,
+                            "custom_production_entry",
+                            linked_production_entry,
+                            update_modified=False,
+                        )
+
+                frappe.msgprint(_("Stock Entry {0} cancelled").format(se_name))
+
+    def unlink_stock_entries_for_delete(self):
+        """Unlink cancelled Stock Entries so cancelled Production Entry can be deleted."""
+        for se_name in self.get_linked_stock_entries():
+            se = frappe.get_doc("Stock Entry", se_name)
+            if se.custom_production_entry == self.name:
+                if se.docstatus != 2:
+                    frappe.throw(_("Cancel Stock Entry {0} before deleting this Production Entry").format(se_name))
+                se.db_set("custom_production_entry", None, update_modified=False)
+
+    def get_linked_stock_entries(self, docstatus=None):
+        stock_entries = []
+        if self.stock_entry:
+            stock_entries.append(self.stock_entry)
+
+        filters = {"custom_production_entry": self.name}
+        if docstatus is not None:
+            filters["docstatus"] = docstatus
+
+        for se_name in frappe.get_all(
+            "Stock Entry",
+            filters=filters,
+            pluck="name",
+        ):
+            if se_name not in stock_entries:
+                stock_entries.append(se_name)
+
+        return stock_entries
 
 
 @frappe.whitelist()
